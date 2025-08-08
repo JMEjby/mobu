@@ -1,0 +1,59 @@
+; Earth Mover's Distance for signal lists (exactly 5 items, values 1-5)
+; Returns similarity score between 0 and 1 (1 = identical, 0 = maximally different)
+; OR returns direction vector when score-type = "dir"
+to-report emd-distance [signal1 signal2 score-type]
+  ; Create frequency vectors for values 1-5
+  let len-signals ( length signal-options )
+  let freq1 n-values len-signals [ 0 ]
+  let freq2 n-values len-signals [ 0 ]
+
+  ; Count frequencies
+  foreach signal1 [ s ->
+    set freq1 replace-item (s - 1) freq1 (item (s - 1) freq1 + 1)
+  ]
+  foreach signal2 [ s ->
+    set freq2 replace-item (s - 1) freq2 (item (s - 1) freq2 + 1)
+  ]
+
+  ; Calculate 1D Wasserstein distance using cumulative distributions
+  ; No normalization needed since both lists have exactly 5 items
+  let cumsum1 0
+  let cumsum2 0
+  let total-distance 0
+  let cumulative-diffs []  ; Store signed differences for direction calculation
+
+  foreach ( range len-signals ) [ i ->
+    set cumsum1 cumsum1 + item i freq1
+    set cumsum2 cumsum2 + item i freq2
+    
+    ifelse score-type = "dir" [
+      ; Store signed difference for direction calculation
+      set cumulative-diffs lput (cumsum2 - cumsum1) cumulative-diffs
+    ][
+      ; Calculate absolute difference for similarity calculation
+      set total-distance total-distance + abs (cumsum1 - cumsum2)
+    ]
+  ]
+
+  ifelse score-type = "dir" [
+    ; Convert cumulative differences to probability adjustments using discrete derivative
+    let direction []
+    let prev-diff 0
+    
+    foreach cumulative-diffs [ curr-diff ->
+      let adjustment (curr-diff - prev-diff) / len-signals  ; Divide for normalization
+      set direction lput adjustment direction
+      set prev-diff curr-diff
+    ]
+    
+    report direction
+  ][
+    ; Calculate dynamic max distance based on signal range
+    let max-possible-distance ( ( max signal-options ) - ( min signal-options ) ) * n-signals
+    
+    ; Convert distance to similarity
+    let similarity 1 - (total-distance / max-possible-distance)
+    
+    report similarity
+  ]
+end
