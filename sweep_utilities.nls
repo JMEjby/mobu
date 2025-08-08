@@ -1,0 +1,135 @@
+; ============================================================================
+; SWEEP UTILITY FUNCTIONS
+; Helper functions specifically for parameter sweeping operations
+; ============================================================================
+
+; ============================================================================
+; INPUT PARSING UTILITIES
+; ============================================================================
+
+; Parse space-separated numeric input into list
+to-report parse-input-list [input-string]
+  report read-from-string (word "[" input-string "]")
+end
+
+; Parse signal representation input (0/1 to binary/categorical)
+to-report parse-signal-rep-input [input-string]
+  let values read-from-string (word "[" input-string "]")
+  report map [i -> ifelse-value i = 1 ["categorical"] ["binary"]] values
+end
+
+; Parse leader values input (0/1/2/3 to descriptive strings)
+to-report parse-leader-values-input [input-string]
+  let values read-from-string (word "[" input-string "]")
+  report map [i -> 
+    ifelse-value i = 0 ["value-profile-A"] [
+      ifelse-value i = 1 ["value-profile-B"] [
+        ifelse-value i = 2 ["value-profile-C"] ["value-profile-D"]
+      ]
+    ]
+  ] values
+end
+
+; Parse leader election input (0/1/2 to descriptive strings)
+to-report parse-leader-election-input [input-string]
+  let values read-from-string (word "[" input-string "]")
+  report map [i -> 
+    ifelse-value i = 1 ["most-aligned"] [
+      ifelse-value i = 2 ["external"] ["random-ea"]
+    ]
+  ] values
+end
+
+; Parse population composition input (0/1/2/3 to descriptive strings)
+to-report parse-population-comp-input [input-string]
+  let values read-from-string (word "[" input-string "]")
+  report map [i -> 
+    ifelse-value i = 1 ["normal-wide"] [
+      ifelse-value i = 2 ["ea-skew"] [
+        ifelse-value i = 3 ["non-ea-skew"] ["normal-narrow"]
+      ]
+    ]
+  ] values
+end
+
+; ============================================================================
+; SWEEP CALCULATION UTILITIES
+; ============================================================================
+
+; Calculate total parameter combinations for sweep
+to-report calculate-total-combinations [params]
+  let total 1
+  ; Multiply lengths of all parameter lists (0-14, excluding data representation at index 15)
+  foreach (range 15) [ i ->
+    set total total * length item i params
+  ]
+  set total total * item 16 params  ; runs per combo
+  report total
+end
+
+; Calculate how many data collection points occur per simulation run
+to-report count-ticks-per-run [ combo ]
+  ; Calculate how many data points are collected per run
+  let data-interval item 15 combo
+  let n-ticks item 14 combo
+  
+  ; Initial tick (0) plus all interval ticks
+  let tick-count 1 + floor (n-ticks / data-interval)
+  report tick-count
+end
+
+; Calculate conversion rates by profile
+to-report calculate-conversion-rates [conv-A conv-B conv-C conv-D conv-E out-A out-B out-C out-D out-E]
+  let conversion-rate-A 0
+  let conversion-rate-B 0
+  let conversion-rate-C 0
+  let conversion-rate-D 0
+  let conversion-rate-E 0
+  
+  carefully [ set conversion-rate-A conv-A / out-A ] [ set conversion-rate-A "NA" ]
+  carefully [ set conversion-rate-B conv-B / out-B ] [ set conversion-rate-B "NA" ]
+  carefully [ set conversion-rate-C conv-C / out-C ] [ set conversion-rate-C "NA" ]
+  carefully [ set conversion-rate-D conv-D / out-D ] [ set conversion-rate-D "NA" ]
+  carefully [ set conversion-rate-E conv-E / out-E ] [ set conversion-rate-E "NA" ]
+  
+  report (list conversion-rate-A conversion-rate-B conversion-rate-C conversion-rate-D conversion-rate-E)
+end
+
+to-report calculate-desertion-rates [des-A des-B des-C des-D des-E ea-A ea-B ea-C ea-D ea-E]
+  let desertion-rate-A 0
+  let desertion-rate-B 0
+  let desertion-rate-C 0
+  let desertion-rate-D 0
+  let desertion-rate-E 0
+  
+  carefully [ set desertion-rate-A des-A / ea-A ] [ set desertion-rate-A "NA" ]
+  carefully [ set desertion-rate-B des-B / ea-B ] [ set desertion-rate-B "NA" ]
+  carefully [ set desertion-rate-C des-C / ea-C ] [ set desertion-rate-C "NA" ]
+  carefully [ set desertion-rate-D des-D / ea-D ] [ set desertion-rate-D "NA" ]
+  carefully [ set desertion-rate-E des-E / ea-E ] [ set desertion-rate-E "NA" ]
+  
+  report (list desertion-rate-A desertion-rate-B desertion-rate-C desertion-rate-D desertion-rate-E)
+end
+
+to-report count-graduating-students [ agent-breed ]
+  ifelse semester = 2 [
+    let n-graduates count agent-breed with [ year = 4.5 ]
+    report n-graduates
+  ] [
+    report 0
+  ]
+  
+end
+
+; ============================================================================
+; SWEEP PROGRESS & FORMATTING UTILITIES
+; ============================================================================
+
+; Print progress message for parameter combinations
+to print-combination-progress [combo combination-id]
+  print (word "Completed " combination-id ": n=" item 0 combo " m=" item 1 combo 
+         " leader=" item 3 combo " rec=" item 4 combo " des=" item 5 combo 
+         " soc=" item 6 combo " sig=" item 7 combo " rate=" item 8 combo 
+         " vals=" item 9 combo " elec=" item 10 combo " life=" item 11 combo 
+         " pop=" item 12 combo " bias =" item 13 combo "ticks=" item 14 combo " interval=" item 15 combo)
+end

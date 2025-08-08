@@ -1,0 +1,486 @@
+; ============================================================================
+; HEADLESS DATA COLLECTION FUNCTIONS
+; ============================================================================
+
+; Collect agent-level data for headless operation (includes combo-id and run-id)
+to-report collect-agent-level-data-headless [combo-id run-id current-tick]
+  let agent-data []
+  
+  ; Create sorted list of turtles: leaders first, then eas, then outsiders
+  let sorted-turtles sort-agents-by-breed-and-profile
+  
+  foreach sorted-turtles [ agent ->
+    ask agent [
+      let agent-row []
+      
+      ; Add combo-id and run-id first
+      set agent-row lput combo-id agent-row
+      set agent-row lput run-id agent-row
+      set agent-row lput current-tick agent-row
+      
+      ; Add model parameters
+      set agent-row lput n-agents agent-row
+      set agent-row lput movement-saturation agent-row
+      set agent-row lput signal-representation agent-row
+      set agent-row lput relative-leader-influence agent-row
+      set agent-row lput log-recruitment-strictness agent-row
+      set agent-row lput log-desertion-strictness agent-row
+      set agent-row lput social-influence agent-row
+      set agent-row lput n-signals agent-row
+      set agent-row lput new-signal-rate agent-row
+      set agent-row lput leader-values agent-row
+      set agent-row lput leader-election agent-row
+      set agent-row lput leader-lifespan agent-row
+      set agent-row lput population-composition agent-row
+      set agent-row lput ea-initial-value-bias agent-row
+      
+      ; Add agent-specific data
+      set agent-row lput who agent-row
+      set agent-row lput breed agent-row
+      set agent-row lput perceived-ea-alignment agent-row
+      set agent-row lput value-profile agent-row
+      set agent-row lput time-as-type agent-row
+      set agent-row lput year agent-row
+      
+      ; Signal weights (separate columns for each weight)
+      foreach signal-weights [ weight ->
+        set agent-row lput weight agent-row
+      ]
+      
+      ; Signals (rescaled if categorical, separate columns for each signal)
+      let processed-signals signals
+      ifelse signal-representation = "categorical" [
+        set processed-signals map-cat-signals signals
+      ] [
+        set processed-signals signals
+      ]
+      foreach processed-signals [ signal ->
+        set agent-row lput signal agent-row
+      ]
+      
+      ; Breed-specific variables
+      ifelse breed = eas [
+        set agent-row lput deserted? agent-row
+        set agent-row lput leader-elect? agent-row
+        set agent-row lput "NA" agent-row  ; recruited? placeholder
+      ] [
+        ifelse breed = outsiders [
+          set agent-row lput "NA" agent-row  ; deserted? placeholder
+          set agent-row lput "NA" agent-row  ; leader-elect? placeholder
+          set agent-row lput recruited? agent-row
+        ] [
+          ; leaders
+          set agent-row lput "NA" agent-row  ; deserted? placeholder
+          set agent-row lput "NA" agent-row  ; leader-elect? placeholder
+          set agent-row lput "NA" agent-row  ; recruited? placeholder
+        ]
+      ]
+      
+      set agent-data lput agent-row agent-data
+    ]
+  ]
+  
+  report agent-data
+end
+
+; Collect aggregated data for headless operation (includes combo-id and run-id)
+to-report collect-simulation-data-headless [combo-id run-id current-tick]
+  ; Count conversions by profile
+  let converted-A count outsiders with [ recruited? and value-profile = "A" ]
+  let converted-B count outsiders with [ recruited? and value-profile = "B" ]
+  let converted-C count outsiders with [ recruited? and value-profile = "C" ]
+  let converted-D count outsiders with [ recruited? and value-profile = "D" ]
+  let converted-E count outsiders with [ recruited? and value-profile = "E" ]
+  
+  ; Count desertions by profile
+  let deserted-A count eas with [ deserted? and value-profile = "A" ]
+  let deserted-B count eas with [ deserted? and value-profile = "B" ]
+  let deserted-C count eas with [ deserted? and value-profile = "C" ]
+  let deserted-D count eas with [ deserted? and value-profile = "D" ]
+  let deserted-E count eas with [ deserted? and value-profile = "E" ]
+  
+  ; Count populations by profile
+  let outsiders-A count outsiders with [ value-profile = "A" ]
+  let outsiders-B count outsiders with [ value-profile = "B" ]
+  let outsiders-C count outsiders with [ value-profile = "C" ]
+  let outsiders-D count outsiders with [ value-profile = "D" ]
+  let outsiders-E count outsiders with [ value-profile = "E" ]
+  
+  let count-eas count eas
+  let count-non-eas count outsiders
+  
+  let ea-A count eas with [ value-profile = "A" ]
+  let ea-B count eas with [ value-profile = "B" ]
+  let ea-C count eas with [ value-profile = "C" ]
+  let ea-D count eas with [ value-profile = "D" ]
+  let ea-E count eas with [ value-profile = "E" ]
+  
+  let total-A count turtles with [ value-profile = "A" ]
+  let total-B count turtles with [ value-profile = "B" ]
+  let total-C count turtles with [ value-profile = "C" ]
+  let total-D count turtles with [ value-profile = "D" ]
+  let total-E count turtles with [ value-profile = "E" ]
+  
+  ; Leader data
+  let leader-value-profile [value-profile] of one-of leaders
+  
+  ; Collect additional data
+  let signal-stats collect-signal-statistics
+  let alignment-data collect-alignment-data
+  let time-stats collect-time-statistics
+  let conversion-rates calculate-conversion-rates converted-A converted-B converted-C converted-D converted-E outsiders-A outsiders-B outsiders-C outsiders-D outsiders-E
+  let desertion-rates calculate-desertion-rates deserted-A deserted-B deserted-C deserted-D deserted-E outsiders-A outsiders-B outsiders-C outsiders-D outsiders-E
+  let grad-counts map [ t -> count-graduating-students t ] (list ( turtle-set eas leaders ) outsiders turtles)
+  
+  
+  ; Compile data row with combo-id and run-id first
+  let basic-data (list combo-id run-id current-tick)
+  
+  ; Add model parameters
+  set basic-data sentence basic-data (list n-agents movement-saturation signal-representation relative-leader-influence)
+  set basic-data sentence basic-data (list log-recruitment-strictness log-desertion-strictness social-influence)
+  set basic-data sentence basic-data (list n-signals new-signal-rate leader-values leader-election leader-lifespan population-composition ea-initial-value-bias)
+  
+  ; Add simulation results
+  set basic-data sentence basic-data (list outsiders-A outsiders-B outsiders-C outsiders-D outsiders-E)
+  set basic-data sentence basic-data (list ea-A ea-B ea-C ea-D ea-E)
+  set basic-data sentence basic-data (list count-eas count-non-eas)
+  set basic-data sentence basic-data (list total-A total-B total-C total-D total-E)
+  set basic-data sentence basic-data (list conversion-rate desertion-rate)
+  set basic-data sentence basic-data conversion-rates
+  set basic-data sentence basic-data (list converted-A converted-B converted-C converted-D converted-E)
+  set basic-data sentence basic-data desertion-rates
+  set basic-data sentence basic-data (list deserted-A deserted-B deserted-C deserted-D deserted-E)
+  set basic-data sentence basic-data (list leader-value-profile)
+  set basic-data sentence basic-data (list cumulative-signal-sum-eas cumulative-signal-sum-non-eas cumulative-signal-sum-total)
+  set basic-data sentence basic-data time-stats
+  set basic-data sentence basic-data alignment-data
+  set basic-data sentence basic-data grad-counts
+  set basic-data sentence basic-data signal-stats
+  
+  report basic-data
+end
+
+; ============================================================================
+; HEADLESS EXPORT FUNCTIONS
+; ============================================================================
+
+; Immediate export for agent-level data in headless mode
+to export-headless-agent-level-data [agent-data combo-id run-id output-dir job-number task-id]
+  ; Create headers for agent-level data
+  let base-headers (list "combo_id" "run_id" "tick" "n_agents" "movement_saturation" "signal_representation" 
+    "relative_leader_influence" "log_recruitment_strictness" "log_desertion_strictness" "social_influence" 
+    "n_signals" "new_signal_rate" "leader_values" "leader_election" "leader_lifespan" "population_composition" "ea_bias"
+    "who" "breed" "perceived_ea_alignment" "value_profile" "time_as_type" "year")
+  
+  ; Add signal weight headers
+  let signal-weight-headers []
+  let n-weights length signal-options
+  foreach (range n-weights) [ i ->
+    set signal-weight-headers lput (word "signal_weight_" i) signal-weight-headers
+  ]
+  
+  ; Add signal headers
+  let signal-headers []
+  foreach (range n-signals) [ i ->
+    set signal-headers lput (word "signal_" (i + 1)) signal-headers
+  ]
+  
+  ; Add breed-specific headers
+  let breed-specific-headers (list "deserted" "leader_elect" "recruited")
+  
+  ; Combine all headers
+  let headers sentence base-headers signal-weight-headers
+  set headers sentence headers signal-headers
+  set headers sentence headers breed-specific-headers
+  
+  ; Data already contains combo-id and run-id, no need to add them
+  let csv-data fput headers agent-data
+  
+  ; Create filename with job and task prefix, save directly to results directory
+  let filename (word "results/job" job-number "_task" task-id "_agent_level_combo" combo-id "_run" run-id "_n" n-agents "_m" movement-saturation 
+                "_l" relative-leader-influence "_rec" log-recruitment-strictness "_des" log-desertion-strictness 
+                "_soc" social-influence "_sig" n-signals "_rate" new-signal-rate 
+                "_vals" leader-values "_elec" leader-election "_life" leader-lifespan 
+                "_pop" population-composition "_bias" ea-initial-value-bias "_sigtype" signal-representation ".csv")
+  
+  ; Export to CSV
+  csv:to-file filename csv-data
+  print (word "Agent-level data exported to " filename)
+end
+
+; Combined export for aggregated data in headless mode
+to export-headless-aggregated-data-combined [all-aggregated-data combo-id output-dir job-number task-id]
+  ; Create headers based on signal representation
+  let signal-weight-headers []
+  
+  ifelse signal-representation = "categorical" [
+    set signal-weight-headers (list 
+      "mean_signal_weight_3_eas" "sd_signal_weight_3_eas" "mean_signal_weight_2_eas" "sd_signal_weight_2_eas"
+      "mean_signal_weight_3_noneas" "sd_signal_weight_3_noneas" "mean_signal_weight_2_noneas" "sd_signal_weight_2_noneas"
+      "mean_signal_weight_3_leader" "mean_signal_weight_2_leader"
+      "mean_signal_weight_1_eas" "sd_signal_weight_1_eas" "mean_signal_weight_0_eas" "sd_signal_weight_0_eas"
+      "mean_signal_weight_neg1_eas" "sd_signal_weight_neg1_eas" "mean_signal_weight_neg2_eas" "sd_signal_weight_neg2_eas"
+      "mean_signal_weight_1_noneas" "sd_signal_weight_1_noneas" "mean_signal_weight_0_noneas" "sd_signal_weight_non0_eas"
+      "mean_signal_weight_neg1_noneas" "sd_signal_weight_neg1_noneas" "mean_signal_weight_neg2_noneas" "sd_signal_weight_neg2_noneas"
+      "mean_signal_weight_1_leader" "mean_signal_weight_0_leader" "mean_signal_weight_neg1_leader" "mean_signal_weight_neg2_leader"
+    )
+  ] [
+    ; For binary signals (original indexing)
+    set signal-weight-headers (list 
+      "mean_signal_weight_0_eas" "sd_signal_weight_0_eas" "mean_signal_weight_1_eas" "sd_signal_weight_1_eas"
+      "mean_signal_weight_0_noneas" "sd_signal_weight_0_noneas" "mean_signal_weight_1_noneas" "sd_signal_weight_1_noneas"
+      "mean_signal_weight_0_leader" "mean_signal_weight_1_leader"
+    )
+  ]
+  
+  ; Base headers
+  let base-headers (list "combo-id" "run_id" "tick" "n_agents" "movement_saturation" "signal_representation" "relative_leader_influence" 
+    "log_recruitment_strictness" "log_desertion_strictness" "social_influence" 
+    "n_signals" "new_signal_rate" "leader_values" "leader_election" "leader_lifespan" "population_composition" "ea_bias"
+    "count_A_noneas" "count_B_noneas" "count_C_noneas" "count_D_noneas" "count_E_noneas"
+    "count_A_eas" "count_B_eas" "count_C_eas" "count_D_eas" "count_E_eas" 
+    "count_eas" "count_noneas" "count_A" "count_B" "count_C" "count_D" "count_E"
+    "conversion_rate" "desertion_rate"
+    "conversion_rate_A" "conversion_rate_B" "conversion_rate_C" "conversion_rate_D" "conversion_rate_E"
+    "converted_A" "converted_B" "converted_C" "converted_D" "converted_E"
+    "desertion_rate_A" "desertion_rate_B" "desertion_rate_C" "desertion_rate_D" "desertion_rate_E"
+    "deserted_A" "deserted_B" "deserted_C" "deserted_D" "deserted_E"
+    "leader_value_profile" "cumsum_signals_eas" "cumsum_signals_noneas" "cumsum_signals" 
+    "mean_seniority_eas" "mean_seniority_noneas" "mean_seniority" 
+    "count_year1_eas" "count_year1_noneas" "count_year1"
+    "count_year2_eas" "count_year2_noneas" "count_year2"
+    "count_year3_eas" "count_year3_noneas" "count_year3"
+    "count_year4_eas" "count_year4_noneas" "count_year4"
+    "count_align_0_0.05_eas" "count_align_0.05_0.1_eas" "count_align_0.1_0.15_eas" "count_align_0.15_0.2_eas" "count_align_0.2_0.25_eas" 
+    "count_align_0.25_0.3_eas" "count_align_0.3_0.35_eas" "count_align_0.35_0.4_eas" "count_align_0.4_0.45_eas" "count_align_0.45_0.5_eas" 
+    "count_align_0.5_0.55_eas" "count_align_0.55_0.6_eas" "count_align_0.6_0.65_eas" "count_align_0.65_0.7_eas" "count_align_0.7_0.75_eas" 
+    "count_align_0.75_0.8_eas" "count_align_0.8_0.85_eas" "count_align_0.85_0.9_eas" "count_align_0.9_0.95_eas" "count_align_0.95_1_eas"
+    "count_align_0_0.05_noneas" "count_align_0.05_0.1_noneas" "count_align_0.1_0.15_noneas" "count_align_0.15_0.2_noneas" "count_align_0.2_0.25_noneas" 
+    "count_align_0.25_0.3_noneas" "count_align_0.3_0.35_noneas" "count_align_0.35_0.4_noneas" "count_align_0.4_0.45_noneas" "count_align_0.45_0.5_noneas" 
+    "count_align_0.5_0.55_noneas" "count_align_0.55_0.6_noneas" "count_align_0.6_0.65_noneas" "count_align_0.65_0.7_noneas" "count_align_0.7_0.75_noneas" 
+    "count_align_0.75_0.8_noneas" "count_align_0.8_0.85_noneas" "count_align_0.85_0.9_noneas" "count_align_0.9_0.95_noneas" "count_align_0.95_1_noneas"
+    "count_graduates_eas" "count_graduates_noneas" "count_graduates"
+    "mean_signals_eas" "mean_signals_noneas" "mean_signals_leader" "sd_signals_eas" "sd_signals_noneas"
+  )
+  ; Combine headers
+  let headers sentence base-headers signal-weight-headers
+  
+  ; Data already contains combo-id and run-id, no need to add them
+  let csv-data fput headers all-aggregated-data
+  
+  ; Create filename with job and task prefix, save directly to results directory
+  let filename (word "results/job" job-number "_task" task-id "_aggregated_combo" combo-id "_n" n-agents "_m" movement-saturation 
+                "_l" relative-leader-influence "_rec" log-recruitment-strictness "_des" log-desertion-strictness 
+                "_soc" social-influence "_sig" n-signals "_rate" new-signal-rate 
+                "_vals" leader-values "_elec" leader-election "_life" leader-lifespan 
+                "_pop" population-composition "_bias" ea-initial-value-bias "_sigtype" signal-representation ".csv")
+  
+  ; Export to CSV
+  csv:to-file filename csv-data
+  print (word "Combined aggregated data exported to " filename " (contains " length all-aggregated-data " rows)")
+end
+; HEADLESS SWEEPING PROCEDURE FOR ARRAY JOBS
+; ============================================================================
+; This file contains functions for running parameter sweeps headless from CSV files
+; CSV file should be generated separately before running array jobs
+
+; Main headless sweep function for array jobs
+; Reads parameter combinations from CSV and executes multiple combinations per task
+; task-id: The array job task number (1 to max-tasks)
+; csv-filename: CSV file containing parameter combinations
+; max-tasks: Maximum number of tasks available (e.g., 10000 for your scheduler limit)
+
+; Updated headless-sweep function with correct job/task distribution
+to headless-sweep [task-id csv-filename max-tasks job-number total-jobs output-directory]
+  clear-all
+  set sweeping? true
+  
+  ; Read parameter combinations from CSV
+  let csv-data csv:from-file csv-filename
+  let headers first csv-data
+  let param-rows but-first csv-data
+  let total-combinations length param-rows
+  
+  ; STEP 1: Calculate which combinations this JOB should handle
+  let combinations-per-job ceiling (total-combinations / total-jobs)
+  let job-start-index ((job-number - 1) * combinations-per-job)
+  let job-end-index min (list (job-start-index + combinations-per-job - 1) (total-combinations - 1))
+  
+  ; STEP 2: Within this job's subset, calculate which combinations this TASK should handle
+  let job-combinations (job-end-index - job-start-index + 1)
+  let combinations-per-task ceiling (job-combinations / max-tasks)
+  let task-start-offset ((task-id - 1) * combinations-per-task)
+  let task-end-offset min (list (task-start-offset + combinations-per-task - 1) (job-combinations - 1))
+  
+  ; STEP 3: Calculate final indices in the full CSV
+  let start-index (job-start-index + task-start-offset)
+  let end-index (job-start-index + task-end-offset)
+  
+  ; Check if this task has any work to do
+  if start-index >= total-combinations or start-index > job-end-index [
+    print (word "Task " task-id " (Job " job-number "/" total-jobs ") has no work - all combinations handled by earlier tasks")
+    stop
+  ]
+  
+  print (word "Task " task-id " (Job " job-number "/" total-jobs ") handling combinations " (start-index + 1) " to " (end-index + 1) 
+         " out of " total-combinations " total combinations")
+  print (word "Job " job-number " handles combinations " (job-start-index + 1) " to " (job-end-index + 1))
+  print (word "Task handles " (end-index - start-index + 1) " combinations within job subset")
+  
+  ; Process each parameter combination assigned to this task
+  foreach (range start-index (end-index + 1)) [ combo-index ->
+    let param-row item combo-index param-rows
+    let combo-id item 0 param-row
+    
+    ; Parse parameters from CSV row with error handling
+    carefully [
+      let movement-sat item 1 param-row
+      let n-agent item 2 param-row
+      let signal-rep item 3 param-row
+      let leader-inf item 4 param-row
+      let log-rec item 5 param-row
+      let log-des item 6 param-row
+      let soc-inf item 7 param-row
+      let n-sig item 8 param-row
+      let sig-rate item 9 param-row
+      let leader-vals item 10 param-row
+      let leader-elec item 11 param-row
+      let leader-life item 12 param-row
+      let pop-comp item 13 param-row
+      let ea-bias item 14 param-row
+      let n-tick item 15 param-row
+      let data-interval item 16 param-row
+      let runs-per-combo item 17 param-row
+      
+      ; Convert numeric parameters safely
+      set movement-sat read-from-string (word movement-sat)
+      set n-agent read-from-string (word n-agent)
+      set leader-inf read-from-string (word leader-inf)
+      set log-rec read-from-string (word log-rec)
+      set log-des read-from-string (word log-des)
+      set soc-inf read-from-string (word soc-inf)
+      set n-sig read-from-string (word n-sig)
+      set sig-rate read-from-string (word sig-rate)
+      set leader-life read-from-string (word leader-life)
+      set ea-bias read-from-string (word ea-bias)
+      set n-tick read-from-string (word n-tick)
+      set data-interval read-from-string (word data-interval)
+      set runs-per-combo read-from-string (word runs-per-combo)
+      
+      ; Apply parameters to global variables
+      set movement-saturation movement-sat
+      set n-agents n-agent
+      set signal-representation signal-rep
+      set relative-leader-influence leader-inf
+      set log-recruitment-strictness log-rec
+      set log-desertion-strictness log-des
+      set social-influence soc-inf
+      set n-signals n-sig
+      set new-signal-rate sig-rate
+      set leader-values leader-vals
+      set leader-election leader-elec
+      set leader-lifespan leader-life
+      set population-composition pop-comp
+      set ea-initial-value-bias ea-bias
+      
+      print (word "  Running combination " (combo-index + 1) " (combo_id " combo-id "): n=" n-agent " m=" movement-sat " sig=" signal-rep)
+      
+      ; Create combo list for consistency (used in export filenames)
+      let combo (list n-agent movement-sat signal-rep leader-inf log-rec log-des soc-inf n-sig sig-rate leader-vals leader-elec leader-life pop-comp ea-bias n-tick data-interval)
+      let output-dir output-directory
+      ; Run all replications for this parameter combination
+      run-headless-all-data combo combo-id runs-per-combo output-dir job-number task-id
+    ] [
+      ; Error handling for parameter parsing
+      print (word "ERROR: Failed to parse parameters for combination " (combo-index + 1) " (combo_id " combo-id ")")
+      print (word "Parameter row: " param-row)
+      print (word "Error: " error-message)
+    ]
+  ]
+  
+  print (word "Task " task-id " (Job " job-number "/" total-jobs ") completed successfully")
+end
+
+; ============================================================================
+; HEADLESS SIMULATION EXECUTION
+; ============================================================================
+
+to run-headless-all-data [ combo combo-id runs-per-combo output-directory job-number task-id]
+  let aggregated-data-for-combo []
+  
+  repeat runs-per-combo [
+    let run-number (length aggregated-data-for-combo / count-ticks-per-run combo + 1)
+    let aggregated-data run-single-simulation-headless-separated combo combo-id run-number output-directory job-number task-id
+    
+    ; Accumulate aggregated data for later combined export
+    set aggregated-data-for-combo sentence aggregated-data-for-combo aggregated-data
+  ]
+  
+  ; Export combined aggregated data for this parameter combination
+  export-headless-aggregated-data-combined aggregated-data-for-combo combo-id output-directory job-number task-id
+end
+
+to-report run-single-simulation-headless-separated [ combo combo-id run-id output-directory job-number task-id]
+  ; Setup and run simulation
+  setup
+  
+  let aggregated-data []
+  let agent-level-data [] 
+  let data-interval item 15 combo
+  let n-ticks item 14 combo
+  
+  ; Check if EAs are extinct from the start (shouldn't happen with proper setup, but safety check)
+  if ea-extinct? [
+    print (word "  Warning: EAs extinct at start of run " run-id " for combo " combo-id)
+    report (list [] [])
+  ]
+  
+  ; Collect initial state immediately (tick 0)
+  set agent-level-data lput (collect-agent-level-data-headless  combo-id run-id 0) agent-level-data
+  
+  ; keep aggregated data
+  set aggregated-data lput (collect-simulation-data-headless combo-id run-id 0) aggregated-data
+  
+  ; Run simulation with proper extinction handling
+  let current-tick 0
+  while [current-tick < n-ticks and not ea-extinct?] [
+    ; Execute one step of the simulation
+    re-assign-groups        ; convert recruited outsiders to EAs and deserted EAs to outsiders
+    graduate-students       ; remove students after year 4
+    
+    ; Check for extinction after critical steps that might cause it
+    check-ea-extinction
+    
+    if not ea-extinct? [
+      ; Continue with rest of go procedure
+      re-elect-leader         ; determine new EA leader if needed
+      induct-students         ; generate new students to replace graduates
+      update-links            ; alignment inference and link visuals
+      update-ea-values        ; update EAs values according to signal representation
+      recruit-eaers           ; outsiders determine if they want to join EA
+      desert-eaers            ; EAs determine if they want to leave EA
+      update-signals          ; generate new signals
+      position-agents-funnel  ; re position based on updated alignment inference
+      
+      set current-tick current-tick + 1
+      tick
+      
+      ; Collect data at specified intervals
+      if (current-tick mod data-interval = 0) [        
+        ; Only keep aggregated data
+        set aggregated-data lput (collect-simulation-data-headless combo-id run-id current-tick) aggregated-data
+        set agent-level-data sentence (collect-agent-level-data-headless combo-id run-id current-tick) agent-level-data
+      ]
+    ]
+  ]
+  
+  ; Log if simulation ended early due to extinction
+  if ea-extinct? [
+    print (word "  EAs went extinct at tick " current-tick " in run " run-id " for combo " combo-id)
+  ]
+  export-headless-agent-level-data  agent-level-data combo-id run-id output-directory job-number task-id
+  
+  ; Return aggregated data only
+  report aggregated-data
+end

@@ -1,0 +1,142 @@
+; Function to position agents in funnel layout based on perceived-ea-alignment
+; Agents are positioned in columns based on their year (1-4), with external leaders in middle
+to position-agents-funnel
+  ; Calculate available space for agents (excluding labeling area)
+  let label-space 7  ; leftmost 7 patches used for labels (min-pxcor to min-pxcor + 6)
+  let available-min-x (min-pxcor + label-space)
+  let available-max-x max-pxcor
+  let available-width (available-max-x - available-min-x + 1)
+  
+  ; Calculate column boundaries (4 equal columns)
+  let column-width floor(available-width / 4)
+  let col1-min available-min-x
+  let col1-mid floor ( col1-min + ( column-width / 2 ) )
+  let col1-max (col1-min + column-width - 1)
+  let col2-min (col1-max + 1)
+  let col2-mid floor ( col2-min + ( column-width / 2 ) )
+  let col2-max (col2-min + column-width - 1)
+  let col3-min (col2-max + 1)
+  let col3-mid floor ( col3-min + ( column-width / 2 ) )
+  let col3-max (col3-min + column-width - 1)
+  let col4-min (col3-max + 1)
+  let col4-mid floor ( col4-min + ( column-width / 2 ) )
+  let col4-max available-max-x
+  
+  ; Add column border markers (mark the rightmost patch of first 3 columns)
+  ask patches with [ pxcor = col1-max and pycor >= min-pycor and pycor <= max-pycor ] [
+    set plabel "|"
+    set plabel-color black
+  ]
+  ask patches with [ pxcor = col2-max and pycor >= min-pycor and pycor <= max-pycor ] [
+    set plabel "|"
+    set plabel-color black
+  ]
+  ask patches with [ pxcor = col3-max and pycor >= min-pycor and pycor <= max-pycor ] [
+    set plabel "|"
+    set plabel-color black
+  ]
+  
+  ask patches with [ ( pxcor = col1-mid ) and pycor = max-pycor ] [
+    set plabel "Year 1"
+    set plabel-color black
+  ]
+  
+  ask patches with [ ( pxcor = col2-mid ) and pycor = max-pycor ] [
+    set plabel "Year 2"
+    set plabel-color black
+  ]
+  
+  ask patches with [ ( pxcor = col3-mid ) and pycor = max-pycor ] [
+    set plabel "Year 3"
+    set plabel-color black
+  ]
+  
+  ask patches with [ ( pxcor = col4-mid ) and pycor = max-pycor ] [
+    set plabel "Year 4"
+    set plabel-color black
+  ]
+
+  ask turtles [
+    ; Handle external leaders specially
+    ifelse breed = leaders and leader-election = "external" [
+      setxy 0 10
+    ]
+    ; For all other agents (including non-external leaders)
+    [ 
+      let new-y-pos floor ( ( perceived-ea-alignment * 20 ) - 10 ) ; scale alignment to y-coordinate range -10 to 10
+      
+      ; Determine column based on year
+      let target-col-min 0
+      let target-col-max 0
+      let agent-year year
+    
+      ; Assign column boundaries based on year
+      if agent-year = 1 or agent-year = 1.5 [
+        set target-col-min col1-min
+        set target-col-max col1-max
+      ]
+      if agent-year = 2  or agent-year = 2.5 [
+        set target-col-min col2-min
+        set target-col-max col2-max
+      ]
+      if agent-year = 3  or agent-year = 3.5 [
+        set target-col-min col3-min
+        set target-col-max col3-max
+      ]
+      if agent-year = 4  or agent-year = 4.5  [
+        set target-col-min col4-min
+        set target-col-max col4-max
+      ]
+
+      ; Check if agent needs repositioning (wrong y-coordinate or wrong column)
+      let current-in-correct-column (xcor >= target-col-min and xcor <= target-col-max)
+      
+      if new-y-pos != ycor or not current-in-correct-column [
+        ; Start search from middle of assigned column
+        let column-center floor((target-col-min + target-col-max) / 2)
+        let target-x column-center
+        let found-spot false
+        let search-distance 0
+
+        ; search for available position within assigned column
+        while [not found-spot] [
+          ; ensure target coordinates are within world boundaries and assigned column
+          if target-x >= target-col-min and target-x <= target-col-max and new-y-pos >= min-pycor and new-y-pos <= max-pycor [
+            ; check if position is unoccupied
+            if not any? turtles-on patch target-x new-y-pos [
+              ; move agent to available position
+              setxy target-x new-y-pos
+              set found-spot true
+            ]
+          ]
+
+          ; if position not found, expand search radius within column
+          if not found-spot [
+            set search-distance search-distance + 1
+            ; search alternates between right and left of column center
+            ifelse search-distance mod 2 = 1 [
+              ; odd search distances: move right
+              set target-x column-center + ceiling (search-distance / 2)
+            ][
+              ; even search distances: move left
+              set target-x column-center - (search-distance / 2)
+            ]
+
+            ; prevent infinite search by limiting to column width
+            if search-distance > (target-col-max - target-col-min) [
+              ; find any available position in target row within assigned column
+              let available-patches patches with [pycor = new-y-pos and pxcor >= target-col-min and pxcor <= target-col-max and not any? turtles-here]
+              ifelse any? available-patches [
+                move-to one-of available-patches
+                set found-spot true
+              ] [
+                ; if no positions available in row within column, agent remains in current position
+                set found-spot true
+              ]
+            ]
+          ]
+        ]
+      ]
+    ]
+  ]
+end

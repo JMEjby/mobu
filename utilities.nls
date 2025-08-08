@@ -1,0 +1,275 @@
+; ============================================================================
+; GENERAL MODEL UTILITY FUNCTIONS
+; General-purpose helper functions
+; ============================================================================
+
+; ============================================================================
+; PROBABILITY & SAMPLING UTILITIES
+; ============================================================================
+
+; Weighted probability sampling from lists
+to-report weighted-prob-draw [prob-list option-list]
+  ; Generates an outcome from a set of probabilities and their associated outcomes
+  let pairs (map list option-list prob-list)
+  report first rnd:weighted-one-of-list pairs [ [p] -> last p ]
+end
+
+; Weighted index selection with bias toward higher values
+to-report select-weighted-index [bias-strength population-indices population-values]
+  ; Creates weights based on trait values, with bias toward higher values
+  let weights []
+  foreach population-indices [ index ->
+    let trait-value item index population-values
+    ; Transform trait value to positive weight, with bias
+    let weight exp(bias-strength * trait-value)
+    set weights lput weight weights
+  ]
+  
+  ; Select index using weighted probability
+  let pairs (map list population-indices weights)
+  report first rnd:weighted-one-of-list pairs [ [p] -> last p ]
+end
+
+; Sample leader values
+to-report external-leader-value-profile
+  let vp "D"
+  
+  (ifelse 
+    leader-values =  "value-profile-A" [ 
+      set vp "A" 
+    ] leader-values = "value-profile-B" [ 
+      set vp "B" 
+    ] leader-values = "value-profile-C" [ 
+      set vp "C" 
+    ][ 
+      set vp "D"
+    ]
+  )
+  report vp
+end
+
+; function that creates a set of signals dependent on value profile
+to-report generate-signals [ n ]
+  let signal ( n-values n [ weighted-prob-draw signal-weights  signal-options ] )
+  
+  report signal
+end
+
+; ============================================================================
+; DATA TRANSFORMATION UTILITIES
+; ============================================================================
+
+; Convert continuous values to categorical value profiles
+to-report value-category [cont-val]
+  ; Returns a value-profile from a continuous value
+  ; Cutpoints based on normal distribution quantiles
+  ; These create: A(~7%), B(~24%), C(~38%), D(~24%), E(~7%)
+  report (ifelse-value
+    cont-val > 1.5 [ "A" ]      ; ~93rd percentile and above
+    cont-val > 0.5 [ "B" ]      ; ~69th to 93rd percentile
+    cont-val > -0.5 [ "C" ]     ; ~31st to 69th percentile
+    cont-val > -1.5 [ "D" ]     ; ~7th to 31st percentile
+    [ "E" ]                     ; Below ~7th percentile
+  )
+end
+
+; Transform categorical signals to centered scale (-2 to 3)
+to-report map-cat-signals [signal-list]
+  report map [s -> s - 3] signal-list
+end
+
+; ============================================================================
+; DV CALCULATION UTILITIES
+; ============================================================================
+
+; Calculate conversion rate safely
+to-report get-conversion-rate
+  if count outsiders = 0 [ report 0 ]  ; Avoid division by zero
+  report count outsiders with [recruited?] / count outsiders
+end
+
+; Calculate desertion rate safely
+to-report get-desertion-rate
+  if count eas = 0 [ report 0 ]  ; Avoid division by zero
+  report count eas with [deserted?] / count eas
+end
+
+to update-cumulative-signal-sums
+  ; Calculate current tick's signal sums
+  let current-eas-sum 0
+  let current-non-eas-sum 0
+  let current-total-sum 0
+  
+  ifelse signal-representation = "categorical" [
+    ; For categorical signals, use map-cat-signals
+    if count eas > 0 or count leaders > 0 [
+      let eas-and-leaders (turtle-set eas leaders)
+      set current-eas-sum sum map-cat-signals reduce sentence ([signals] of eas-and-leaders)
+    ]
+    
+    if count turtles > 0 [
+      set current-total-sum sum map-cat-signals reduce sentence ([signals] of turtles)
+    ]
+    if count outsiders > 0 [
+       set current-non-eas-sum sum map-cat-signals reduce sentence ([signals] of outsiders)
+    ]
+  ] [
+    ; For binary signals, use original signals
+    if count eas > 0 or count leaders > 0 [
+      let eas-and-leaders (turtle-set eas leaders)
+      set current-eas-sum sum reduce sentence ([signals] of eas-and-leaders)
+    ]
+    
+    if count outsiders > 0 [
+      set current-non-eas-sum sum reduce sentence ([signals] of outsiders)
+    ]
+    
+    if count turtles > 0 [
+      set current-total-sum sum reduce sentence ([signals] of turtles)
+    ]
+  ]
+  
+  ; Add to cumulative sums
+  set cumulative-signal-sum-eas cumulative-signal-sum-eas + current-eas-sum
+  set cumulative-signal-sum-non-eas cumulative-signal-sum-non-eas + current-non-eas-sum
+  set cumulative-signal-sum-total cumulative-signal-sum-total + current-total-sum
+end
+
+; ============================================================================
+; PLOTTING UTILITIES
+; ============================================================================
+; Function to dynamically set up the EA Values over Time plot based on signal representation
+to setup-signal-probability-plot [ class ]
+  set-current-plot word ifelse-value class = "EA" [ "EA" ] ["Non-EA"] " Values over Time"
+  clear-plot
+  
+  ; Set y-axis range and create pens based on signal representation
+  ifelse signal-representation = "categorical" [
+    ; Categorical: 6 signals, y-range 0-1 for probabilities
+    set-plot-y-range 0 1
+    
+    ; Create 6 pens for categorical signals (6, 5, 4, 3, 2, 1)
+    ; Colors: (103, 105, 107, 115, 137, 135)
+    let colors (list 103 105 107 115 137 135)
+    let pen-names (list "P(signal=3)" "P(signal=2)" "P(signal=1)" "P(signal=0)" "P(signal=-1)" "P(signal=-2)")
+    
+    foreach (range 6) [ i ->
+      create-temporary-plot-pen item i pen-names
+      set-plot-pen-color item i colors
+      set-plot-pen-mode 0  ; line mode
+    ]
+  ] [
+    ; Binary: 2 signals, y-range 0-1 for probabilities  
+    set-plot-y-range 0 1
+    
+    ; Create 2 pens for binary signals (0, 1)
+    ; Colors: (105, 135)
+    create-temporary-plot-pen "P(signal=0)"
+    set-plot-pen-color 105
+    set-plot-pen-mode 0
+    
+    create-temporary-plot-pen "P(signal=1)" 
+    set-plot-pen-color 135
+    set-plot-pen-mode 0
+  ]
+end
+
+; Function to update the signal probability plot
+to update-signal-probability-plot [ class ]
+  set-current-plot word ifelse-value class = "EA" [ "EA" ] ["Non-EA"] " Values over Time"
+  
+  let agents ifelse-value class = "EA" [ ( turtle-set leaders eas ) ] [ ( turtle-set outsiders ) ]
+  
+  ifelse signal-representation = "categorical" [
+    let pen-names (list "P(signal=3)" "P(signal=2)" "P(signal=1)" "P(signal=0)" "P(signal=-1)" "P(signal=-2)")
+    
+    ; Plot categorical signal probabilities
+    foreach (range 6) [ i ->
+      
+      set-current-plot-pen item i pen-names
+      
+      ; Calculate mean probability for this signal across EAs and leaders
+      let total-prob 0
+      let total-agents 0
+      
+      if count agents > 0 [
+        set total-prob total-prob + sum [item i signal-weights] of agents
+        set total-agents total-agents + count agents
+      ]
+      
+      if total-agents > 0 [
+        plot (total-prob / total-agents)
+      ]
+    ]
+  ] [
+    ; Plot binary signal probabilities
+    
+    ; P(signal = 0)
+    set-current-plot-pen "P(signal=0)"
+    let total-prob-0 0
+    let total-agents 0
+    
+    if count agents > 0 [
+      set total-prob-0 total-prob-0 + sum [item 0 signal-weights] of agents
+      set total-agents total-agents + count agents
+    ]
+    
+    if total-agents > 0 [
+      plot (total-prob-0 / total-agents)
+    ]
+    
+    ; P(signal = 1)
+    set-current-plot-pen "P(signal=1)"
+    let total-prob-1 0
+    set total-agents 0
+    
+    if count agents > 0 [
+      set total-prob-1 total-prob-1 + sum [item 1 signal-weights] of agents
+      set total-agents total-agents + count agents
+    ]
+    
+    if total-agents > 0 [
+      plot (total-prob-1 / total-agents)
+    ]
+  ]
+end
+
+to setup-mean-signal-plot
+  set-current-plot "Average Signal" 
+  clear-plot
+
+; Set y-axis range based on signal representation
+  ifelse signal-representation = "categorical" [
+    set-plot-y-range -2 3
+  ] [
+    set-plot-y-range 0 1
+  ]
+end
+
+
+to update-mean-signal-plot
+  set-current-plot "Average Signal" 
+  
+  set-current-plot-pen "EAs"
+  ifelse not empty? [ signals ] of eas [
+    ifelse signal-representation = "categorical" [
+      plot mean map-cat-signals reduce sentence ( [ signals ] of eas )
+    ] [
+      plot mean reduce sentence ( [ signals ] of eas )
+    ] 
+  ] [ plot 0 ]
+  
+  set-current-plot-pen "Non-EAs"
+  ifelse signal-representation = "categorical" [
+    plot mean map-cat-signals reduce sentence ( [ signals ] of outsiders )
+  ] [
+  plot mean reduce sentence ( [ signals ] of outsiders )
+  ]
+  
+  set-current-plot-pen "Leader"
+  ifelse signal-representation = "categorical" [
+    plot mean map-cat-signals reduce sentence ( [ signals ] of leaders )
+  ] [
+  plot mean reduce sentence ( [ signals ] of leaders )
+  ]
+end

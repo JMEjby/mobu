@@ -1,0 +1,742 @@
+; ============================================================================
+; SWEEPING PROCEDURE
+; ============================================================================
+
+; Main sweep orchestration function
+to sweep
+  clear-all
+  set sweeping? true
+  
+  let params collect-sweep-parameters
+  if not validate-and-confirm-sweep params [ 
+    user-message "Sweep cancelled."
+    set sweeping? false
+    stop 
+  ]
+  
+  let combinations generate-parameter-combinations params
+  let combination-id 0
+  let runs-per-combo item 16 params       ; runs-per-combo is at index 16
+  
+  foreach combinations [ combo ->
+    set combination-id combination-id + 1
+    run-parameter-combination-with-combined-export combo runs-per-combo combination-id
+    print-combination-progress combo combination-id
+  ]
+  
+  set sweeping? false
+  user-message (word "Sweep complete! " combination-id " parameter combinations tested. Agent-level data and alignment matrices exported per run, aggregated data combined per parameter combination.")
+end
+
+; ============================================================================
+; PARAMETER COLLECTION AND VALIDATION
+; ============================================================================
+
+to-report collect-sweep-parameters
+  ; Collect all user inputs and return as list
+  ; Order: 0=m-sat, 1=n-agent, 2=signal-rep, 3=leader-inf, 4=log-rec, 5=log-des, 
+  ;        6=soc-inf, 7=n-sig, 8=sig-rate, 9=leader-vals, 10=leader-elec, 
+  ;        11=leader-life, 12=pop-comp, 13 = ea-bias, 14=n-ticks, 15=data-interval, 16=runs-per-combo
+  let m-sat-values parse-input-list (user-input "Enter movement saturation values (e.g., 2.5 5 7.5 10):")
+  let n-agent-values parse-input-list (user-input "Enter population sizes (e.g., 100 250 500 1000):")
+  let signal-rep-values parse-signal-rep-input (user-input "Enter signal representations (e.g., 0 1. 0=binary, 1=categorical):")
+  let leader-influence-values parse-input-list (user-input "Enter relative leader influence values (e.g., 0 25 50 75 100):")
+  let log-recruitment-values parse-input-list (user-input "Enter log-recruitment-strictness values (e.g., -1 -0.5 0 0.5 1):")
+  let log-desertion-values parse-input-list (user-input "Enter log-desertion-strictness values (e.g., -1 -0.5 0 0.5 1):")
+  let social-influence-values parse-input-list (user-input "Enter social-influence values (e.g., 0 0.25 1 3):")
+  let n-signals-values parse-input-list (user-input "Enter n-signals values (e.g., 3 5 7):")
+  let new-signal-rate-values parse-input-list (user-input "Enter new-signal-rate values (e.g., 50 75 100):")
+  let leader-values-values parse-leader-values-input (user-input "Enter leader-values options (e.g., 0 1 2 3. 0=value-profile-A, 1=value-profile-B, 2=value-profile-C, 3=value-profile-D):")
+  let leader-election-values parse-leader-election-input (user-input "Enter leader-election options (e.g., 0 1 2. 0=random-ea, 1=most-aligned, 2=external):")
+  let leader-lifespan-values parse-input-list (user-input "Enter leader-lifespan values (e.g., 8 16):")
+  let population-comp-values parse-population-comp-input (user-input "Enter population-composition options (0=normal-narrow, 1=normal-wide):")
+  let ea-bias-values parse-input-list (user-input "Enter EA initial value alignment bias options (0 = no bias 0.5 = very low bias, 1 = low bias, 1.5 = moderate bias):")
+  let n-ticks-values parse-input-list (user-input "Enter number of ticks to run simulation (e.g., 50 100 200):")
+  let data-interval-values parse-input-list (user-input "Enter data collection interval (1=every tick, 10=every 10 ticks, etc.):")
+  let runs-per-combo read-from-string (user-input "Enter number of runs per combination:")
+  
+  report (list m-sat-values n-agent-values signal-rep-values leader-influence-values 
+               log-recruitment-values log-desertion-values social-influence-values
+               n-signals-values new-signal-rate-values leader-values-values
+               leader-election-values leader-lifespan-values population-comp-values ea-bias-values
+               n-ticks-values data-interval-values runs-per-combo)
+end
+
+to-report validate-and-confirm-sweep [params]
+  let total-combinations calculate-total-combinations params
+  
+  let confirmation-message (word
+    "Start parameter sweep with the following settings?\n\n"
+    "Movement saturation: " item 0 params "\n"
+    "Population sizes: " item 1 params "\n"
+    "Signal representation: " item 2 params "\n"
+    "Relative leader influence: " item 3 params "\n"
+    "Log-recruitment-strictness: " item 4 params "\n"
+    "Log-desertion-strictness: " item 5 params "\n"
+    "Social-influence: " item 6 params "\n"
+    "N-signals: " item 7 params "\n"
+    "New-signal-rate: " item 8 params "\n"
+    "Leader-values: " item 9 params "\n"
+    "Leader-election: " item 10 params "\n"
+    "Leader-lifespan: " item 11 params "\n"
+    "Population-composition: " item 12 params "\n"
+    "EA-inital-values-bias: " item 13 params "\n"
+    "Number of ticks: " item 14 params "\n"
+    "Data collection interval: " item 15 params "\n"
+    "Runs per combination: " item 16 params "\n"
+    "Total simulations: " total-combinations "\n\n"
+    "This may take several hours or days depending on the number of paramters chosen. Continue?")
+  
+  report user-yes-or-no? confirmation-message
+end
+
+; ============================================================================
+; PARAMETER COMBINATION GENERATION
+; ============================================================================
+
+to-report generate-parameter-combinations [params]
+  let combinations []
+  
+  ; Extract parameter lists
+  let m-sat-values item 0 params
+  let n-agent-values item 1 params
+  let signal-rep-values item 2 params
+  let leader-influence-values item 3 params
+  let log-recruitment-values item 4 params
+  let log-desertion-values item 5 params
+  let social-influence-values item 6 params
+  let n-signals-values item 7 params
+  let new-signal-rate-values item 8 params
+  let leader-values-values item 9 params
+  let leader-election-values item 10 params
+  let leader-lifespan-values item 11 params
+  let population-comp-values item 12 params
+  let ea-bias-values item 13 params
+  let n-ticks-values item 14 params
+  let data-interval-values item 15 params
+  
+  ; Generate all combinations
+  foreach n-agent-values [ n ->
+    foreach m-sat-values [ m ->
+      foreach signal-rep-values [ sig-rep ->
+        foreach leader-influence-values [ leader-inf ->
+          foreach log-recruitment-values [ log-rec ->
+            foreach log-desertion-values [ log-des ->
+              foreach social-influence-values [ soc-inf ->
+                foreach n-signals-values [ n-sig ->
+                  foreach new-signal-rate-values [ sig-rate ->
+                    foreach leader-values-values [ leader-vals ->
+                      foreach leader-election-values [ leader-elec ->
+                        foreach leader-lifespan-values [ leader-life ->
+                          foreach population-comp-values [ pop-comp ->
+                            foreach ea-bias-values [ea-bias ->
+                              foreach n-ticks-values [ n-tick ->
+                                foreach data-interval-values [ data-interval ->
+                                  ; Create combination as list: [n, m, sig-rep, leader-inf, log-rec, log-des, soc-inf, n-sig, sig-rate, leader-vals, leader-elec, leader-life, pop-comp, ea-bias, n-tick, data-interval]
+                                  let combo (list n m sig-rep leader-inf log-rec log-des soc-inf n-sig sig-rate leader-vals leader-elec leader-life pop-comp ea-bias n-tick data-interval)
+                                  set combinations lput combo combinations
+                                ]
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    ]
+  ]
+  
+  report combinations
+end
+
+; ============================================================================
+; SIMULATION EXECUTION WITH COMBINED EXPORT
+; ============================================================================
+to run-parameter-combination-with-combined-export [ combo runs-per-combo combination-id ]
+  let aggregated-data-for-combo []
+  
+  repeat runs-per-combo [
+    let run-number (length aggregated-data-for-combo / count-ticks-per-run combo + 1)
+    let aggregated-data-only run-single-simulation-separated combo combination-id run-number
+    
+    ; Accumulate aggregated data for later combined export
+    set aggregated-data-for-combo sentence aggregated-data-for-combo aggregated-data-only
+  ]
+  
+  ; Export all aggregated data for this parameter combination in one file
+  export-aggregated-data-combined aggregated-data-for-combo combination-id combo
+end
+
+to-report run-single-simulation-separated [ combo combination-id run-id ]
+  ; Set parameters for this simulation
+  apply-parameters-to-model combo
+  setup
+  
+  let aggregated-data []
+  let agent-data []
+  
+  let data-interval item 15 combo
+  let n-ticks item 14 combo
+  
+  ; Collect and export initial state immediately (tick 0)
+  export-alignment-matrices combo run-id
+
+  ; keep aggregated and agent data
+  set agent-data lput ( collect-agent-level-data combo run-id 0 ) agent-data
+  set aggregated-data lput (collect-simulation-data combo run-id 0) aggregated-data
+  
+  ; Run simulation with proper extinction handling
+  let current-tick 0
+  while [current-tick < n-ticks and not ea-extinct?] [
+    ; Execute one step of the simulation
+    re-assign-groups        ; convert recruited outsiders to EAs and deserted EAs to outsiders
+    graduate-students       ; remove students after year 
+    
+    ; Check for extinction after critical steps that might cause it
+    check-ea-extinction
+    
+    if not ea-extinct? [
+      ; Continue with rest of go procedure
+      re-elect-leader         ; determine new EA leader if needed
+      induct-students         ; generate new students to replace graduates
+      update-links            ; alignment inference and link visuals
+      update-ea-values        ; update EAs values according to signal representation
+      recruit-eaers           ; outsiders determine if they want to join EA
+      desert-eaers            ; EAs determine if they want to leave EA
+      update-signals          ; generate new signals
+      position-agents-funnel  ; re position based on updated alignment inference
+      
+      set current-tick current-tick + 1
+      tick
+      
+      ; Collect data at specified intervals
+      if (current-tick mod data-interval = 0) [
+        ; Export agent-level data immediately per tick
+        export-alignment-matrices combo run-id
+        
+        set aggregated-data lput (collect-simulation-data combo run-id ticks) aggregated-data
+        set agent-data lput ( collect-agent-level-data combo run-id ticks ) agent-data
+      ]
+    ]
+  ]
+  
+  ; Log if simulation ended early due to extinction
+  if ea-extinct? [
+    print (word "  EAs went extinct at tick " current-tick " in run " run-id " for combo " combo)
+  ]
+  
+  ; Return both data types as separate elements
+  report aggregated-data
+end
+
+to apply-parameters-to-model [combo]
+  ; combo order: [n, m, sig-rep, leader-inf, log-rec, log-des, soc-inf, n-sig, sig-rate, leader-vals, leader-elec, leader-life, pop-comp, ea-bias, n-tick, data-interval]
+  set n-agents item 0 combo
+  set movement-saturation item 1 combo
+  set signal-representation item 2 combo
+  set relative-leader-influence item 3 combo
+  set log-recruitment-strictness item 4 combo
+  set log-desertion-strictness item 5 combo
+  set social-influence item 6 combo
+  set n-signals item 7 combo
+  set new-signal-rate item 8 combo
+  set leader-values item 9 combo
+  set leader-election item 10 combo
+  set leader-lifespan item 11 combo
+  set population-composition item 12 combo
+  set ea-initial-value-bias item 13 combo
+end
+
+; ============================================================================
+; IMMEDIATE AGENT-LEVEL DATA EXPORT
+; ============================================================================
+
+to export-agent-level-data [ agent-data combination-id combo run-id current-tick ]
+  ; Create headers for agent-level data
+  let base-headers (list "run_id" "tick" "n_agents" "movement_saturation" "signal_representation" "relative_leader_influence" 
+    "log_recruitment_strictness" "log_desertion_strictness" "social_influence" 
+    "n_signals" "new_signal_rate" "leader_values" "leader_election" "leader_lifespan" "population_composition" "ea_bias" "n_ticks_total" "data_interval" 
+    "who" "breed" "perceived_ea_alignment" "value_profile" "time_as_type" "year")
+  
+  ; Add signal weight headers
+  let signal-weight-headers []
+  let n-weights length signal-options
+  foreach (range n-weights) [ i ->
+    set signal-weight-headers lput (word "signal_weight_" i) signal-weight-headers
+  ]
+  
+  ; Add signal headers
+  let signal-headers []
+  let n-sigs item 7 combo  ; n-signals from combo
+  foreach (range n-sigs) [ i ->
+    set signal-headers lput (word "signal_" ( i + 1)) signal-headers
+  ]
+  
+  ; Add breed-specific headers
+  let breed-specific-headers (list "deserted" "leader_elect" "recruited")
+  
+  ; Combine all headers
+  let headers sentence base-headers signal-weight-headers
+  set headers sentence headers signal-headers
+  set headers sentence headers breed-specific-headers
+  
+  let csv-data fput headers agent-data
+  
+  ; Create descriptive filename with tick
+  let filename (word "data/agent_level_" combination-id "_run" run-id "_n" item 0 combo "_m" item 1 combo 
+                "_l" item 3 combo "_rec" item 4 combo "_des" item 5 combo 
+                "_soc" item 6 combo "_sig" item 7 combo "_rate" item 8 combo 
+                "_vals" item 9 combo "_elec" item 10 combo "_life" item 11 combo 
+                "_pop" item 12 combo "_bias" item 13 combo "_ticks" item 14 combo "_int" item 15 combo "_sigtype" item 2 combo ".csv")
+  
+  ; Export to CSV
+  csv:to-file filename csv-data
+end
+
+; ============================================================================
+; COMBINED AGGREGATED DATA EXPORT
+; ============================================================================
+
+to export-aggregated-data-combined [ all-aggregated-data combination-id combo ]
+  ; Create headers based on signal representation
+  let signal-weight-headers []
+  
+  ifelse item 2 combo = "categorical" [
+    ; For categorical signals with rescaling using map-cat-signals (6→3, 5→2, 4→1, 3→0, 2→-1, 1→-2)
+    ; signal_weights indices: 0=signal_1→-2, 1=signal_2→-1, 2=signal_3→0, 3=signal_4→1, 4=signal_5→2, 5=signal_6→3
+    set signal-weight-headers (list 
+      "mean_signal_weight_neg2_eas" "sd_signal_weight_neg2_eas" "mean_signal_weight_neg1_eas" "sd_signal_weight_neg1_eas"
+      "mean_signal_weight_0_eas" "sd_signal_weight_0_eas" "mean_signal_weight_1_eas" "sd_signal_weight_1_eas"
+      "mean_signal_weight_2_eas" "sd_signal_weight_2_eas" "mean_signal_weight_3_eas" "sd_signal_weight_3_eas"
+      "mean_signal_weight_neg2_noneas" "sd_signal_weight_neg2_noneas" "mean_signal_weight_neg1_noneas" "sd_signal_weight_neg1_noneas"
+      "mean_signal_weight_0_noneas" "sd_signal_weight_0_noneas" "mean_signal_weight_1_noneas" "sd_signal_weight_1_noneas"
+      "mean_signal_weight_2_noneas" "sd_signal_weight_2_noneas" "mean_signal_weight_3_noneas" "sd_signal_weight_3_noneas"
+      "mean_signal_weight_neg2_leader" "sd_signal_weight_neg2_leader" "mean_signal_weight_neg1_leader" "sd_signal_weight_neg1_leader"
+      "mean_signal_weight_0_leader" "sd_signal_weight_0_leader" "mean_signal_weight_1_leader" "sd_signal_weight_1_leader"
+      "mean_signal_weight_2_leader" "sd_signal_weight_2_leader" "mean_signal_weight_3_leader" "sd_signal_weight_3_leader")
+  ] [
+    ; For binary signals (original indexing)
+    set signal-weight-headers (list 
+      "mean_signal_weight_0_eas" "sd_signal_weight_0_eas" "mean_signal_weight_1_eas" "sd_signal_weight_1_eas"
+      "mean_signal_weight_0_noneas" "sd_signal_weight_0_noneas" "mean_signal_weight_1_noneas" "sd_signal_weight_1_noneas"
+      "signal_weight_0_mean_leader" "signal_weight_0_sd_leader" "signal_weight_1_mean_leader" "signal_weight_1_sd_leader"
+    )
+  ]
+  
+  ; Base headers
+  let base-headers (list "run_id" "tick" "n_agents" "movement_saturation" "signal_representation" "relative_leader_influence" 
+    "log_recruitment_strictness" "log_desertion_strictness" "social_influence" 
+    "n_signals" "new_signal_rate" "leader_values" "leader_election" "leader_lifespan" "population_composition" "ea_bias" "n_ticks_total" "data_interval" 
+    "count_A_noneas" "count_B_noneas" "count_C_noneas" "count_D_noneas" "count_E_noneas"
+    "count_A_eas" "count_B_eas" "count_C_eas" "count_D_eas" "count_E_eas" 
+    "count_eas" "count_noneas" "count_A" "count_B" "count_C" "count_D" "count_E"
+    "conversion_rate" "desertion_rate"
+    "conversion_rate_A" "conversion_rate_B" "conversion_rate_C" "conversion_rate_D" "conversion_rate_E"
+    "converted_A" "converted_B" "converted_C" "converted_D" "converted_E"
+    "desertion_rate_A" "desertion_rate_B" "desertion_rate_C" "desertion_rate_D" "desertion_rate_E"
+    "deserted_A" "deserted_B" "deserted_C" "deserted_D" "deserted_E"
+    "leader_value_profile" "cumsum_signals_eas" "cumsum_signals_noneas" "cumsum_signals" 
+    "mean_seniority_eas" "mean_seniority_noneas" "mean_seniority" 
+    "count_year1_eas" "count_year1_noneas" "count_year1"
+    "count_year2_eas" "count_year2_noneas" "count_year2"
+    "count_year3_eas" "count_year3_noneas" "count_year3"
+    "count_year4_eas" "count_year4_noneas" "count_year4"
+    "count_align_0_0.05_eas" "count_align_0.05_0.1_eas" "count_align_0.1_0.15_eas" "count_align_0.15_0.2_eas" "count_align_0.2_0.25_eas" 
+    "count_align_0.25_0.3_eas" "count_align_0.3_0.35_eas" "count_align_0.35_0.4_eas" "count_align_0.4_0.45_eas" "count_align_0.45_0.5_eas" 
+    "count_align_0.5_0.55_eas" "count_align_0.55_0.6_eas" "count_align_0.6_0.65_eas" "count_align_0.65_0.7_eas" "count_align_0.7_0.75_eas" 
+    "count_align_0.75_0.8_eas" "count_align_0.8_0.85_eas" "count_align_0.85_0.9_eas" "count_align_0.9_0.95_eas" "count_align_0.95_1_eas"
+    "count_align_0_0.05_noneas" "count_align_0.05_0.1_noneas" "count_align_0.1_0.15_noneas" "count_align_0.15_0.2_noneas" "count_align_0.2_0.25_noneas" 
+    "count_align_0.25_0.3_noneas" "count_align_0.3_0.35_noneas" "count_align_0.35_0.4_noneas" "count_align_0.4_0.45_noneas" "count_align_0.45_0.5_noneas" 
+    "count_align_0.5_0.55_noneas" "count_align_0.55_0.6_noneas" "count_align_0.6_0.65_noneas" "count_align_0.65_0.7_noneas" "count_align_0.7_0.75_noneas" 
+    "count_graduates_eas" "count_graduates_noneas" "count_graduates"
+    "mean_signals_eas" "mean_signals_noneas" "mean_signals_leader" "sd_signals_eas" "sd_signals_noneas"
+  )
+  
+  ; Combine headers
+  let headers sentence base-headers signal-weight-headers
+  let csv-data fput headers all-aggregated-data
+  
+  ; Create descriptive filename for combined aggregated data
+  let filename (word "data/aggregated" combination-id "_n" item 0 combo "_m" item 1 combo 
+                "_l" item 3 combo "_rec" item 4 combo "_des" item 5 combo 
+                "_soc" item 6 combo "_sig" item 7 combo "_rate" item 8 combo 
+                "_vals" item 9 combo "_elec" item 10 combo "_life" item 11 combo 
+                "_pop" item 12 combo "_bias" item 13 combo "_ticks" item 14 combo "_int" item 15 combo "_sigtype" item 2 combo ".csv")
+  
+  ; Export to CSV
+  csv:to-file filename csv-data
+  print (word "Combined aggregated data exported to " filename " (contains " length all-aggregated-data " rows)")
+end
+
+; ============================================================================
+; AGENT-LEVEL DATA COLLECTION
+; ============================================================================
+
+to-report collect-agent-level-data [combo run-id current-tick]
+  let agent-data []
+  
+  ; Create sorted list of turtles: leaders first, then eas, then outsiders
+  ; Within each breed, sort by value-profile A->E
+  let sorted-turtles sort-agents-by-breed-and-profile
+  
+  foreach sorted-turtles [ agent ->
+    ask agent [
+      let agent-row []
+      
+      ; Basic identifiers
+      set agent-row lput run-id agent-row
+      set agent-row lput current-tick agent-row
+      set agent-row sentence agent-row combo  ; Add all combo parameters
+      set agent-row lput who agent-row
+      set agent-row lput breed agent-row
+      
+      ; Turtle-owned variables
+      set agent-row lput perceived-ea-alignment agent-row
+      set agent-row lput value-profile agent-row
+      set agent-row lput time-as-type agent-row
+      set agent-row lput year agent-row
+      
+      ; Signal weights (separate columns for each weight)
+      foreach signal-weights [ weight ->
+        set agent-row lput weight agent-row
+      ]
+      
+      ; Signals (rescaled if categorical, separate columns for each signal)
+      let processed-signals signals
+      ifelse signal-representation = "categorical" [
+        set processed-signals map-cat-signals signals
+      ] [
+        set processed-signals signals
+      ]
+      foreach processed-signals [ signal ->
+        set agent-row lput signal agent-row
+      ]
+      
+      ; Breed-specific variables (add placeholders for all agents, then fill appropriately)
+      ifelse breed = eas [
+        set agent-row lput deserted? agent-row
+        set agent-row lput leader-elect? agent-row
+        set agent-row lput "NA" agent-row  ; recruited? placeholder
+      ] [
+        ifelse breed = outsiders [
+          set agent-row lput "NA" agent-row  ; deserted? placeholder
+          set agent-row lput "NA" agent-row  ; leader-elect? placeholder
+          set agent-row lput recruited? agent-row
+        ] [
+          ; leaders
+          set agent-row lput "NA" agent-row  ; deserted? placeholder
+          set agent-row lput "NA" agent-row  ; leader-elect? placeholder
+          set agent-row lput "NA" agent-row  ; recruited? placeholder
+        ]
+      ]
+      
+      set agent-data lput agent-row agent-data
+    ]
+  ]
+  
+  report agent-data
+end
+
+to-report sort-agents-by-breed-and-profile
+  ; Create lists for each breed
+  let leaders-list sort-by [ [a b] -> [value-profile] of a < [value-profile] of b ] (turtle-set leaders)
+  let eas-list sort-by [ [a b] -> [value-profile] of a < [value-profile] of b ] (turtle-set eas)
+  let outsiders-list sort-by [ [a b] -> [value-profile] of a < [value-profile] of b ] (turtle-set outsiders)
+  
+  ; Combine in order: leaders, eas, outsiders
+  let sorted-list []
+  set sorted-list sentence sorted-list leaders-list
+  set sorted-list sentence sorted-list eas-list
+  set sorted-list sentence sorted-list outsiders-list
+  
+  report sorted-list
+end
+
+; ============================================================================
+; ALIGNMENT MATRIX EXPORT
+; ============================================================================
+
+to export-alignment-matrices [combo run-id]
+  ; Create alignment matrix
+  let alignment-matrix []
+  let misalignment-matrix []
+  
+  ; Create header row with agent IDs
+  let header-row sentence ["agent_id"] sort [who] of turtles
+ 
+  set alignment-matrix lput header-row alignment-matrix
+  set misalignment-matrix lput header-row misalignment-matrix
+  
+  ; Fill matrices
+  foreach sort turtles [ agent1 ->
+    ask agent1 [
+      let alignment-row (list who)
+      let misalignment-row (list who)
+      
+      foreach sort turtles [ agent2 ->
+        let link-between-agents link-with agent2
+        
+        ifelse link-between-agents != nobody [
+          ask link-between-agents [
+            set alignment-row lput perceived-alignment alignment-row
+            
+            ; Handle misalignment sign inversion for end2
+            let misalignment-value perceived-misalignment
+            ifelse signal-representation = "binary" [
+              ifelse [who] of agent2 = [who] of end2 [
+                set misalignment-value (- perceived-misalignment)
+              ] [
+                set misalignment-value perceived-misalignment
+              ]
+            ] [
+              ifelse [who] of agent2 = [who] of end2 [
+                set misalignment-value map [ x -> (- x) ] perceived-misalignment
+              ] [
+                set misalignment-value perceived-misalignment
+              ]
+            ]
+            set misalignment-row lput misalignment-value misalignment-row
+          ]
+        ] [
+          set alignment-row lput "NA" alignment-row
+          set misalignment-row lput "NA" misalignment-row
+        ]
+      ]
+      
+      set alignment-matrix lput alignment-row alignment-matrix
+      set misalignment-matrix lput misalignment-row misalignment-matrix
+    ]
+  ]
+  
+  ; Export matrices
+  let alignment-filename (word "data/alignment_matrix_run" run-id "_n" item 0 combo "_m" item 1 combo 
+                              "_l" item 3 combo "_rec" item 4 combo "_des" item 5 combo 
+                              "_soc" item 6 combo "_sig" item 7 combo "_rate" item 8 combo 
+                              "_vals" item 9 combo "_elec" item 10 combo "_life" item 11 combo 
+                              "_pop" item 12 combo "_bias" item 13 combo "_ticks" item 14 combo "_int" item 15 combo "_sigtype" item 2 combo ".csv")
+  
+  let misalignment-filename (word "data/misalignment_matrix_run" run-id "_n" item 0 combo "_m" item 1 combo 
+                                 "_l" item 3 combo "_rec" item 4 combo "_des" item 5 combo 
+                                 "_soc" item 6 combo "_sig" item 7 combo "_rate" item 8 combo 
+                                 "_vals" item 9 combo "_elec" item 10 combo "_life" item 11 combo 
+                                 "_pop" item 12 combo  "_bias" item 13 combo "_ticks" item 14 combo "_int" item 15 combo "_sigtype" item 2 combo ".csv")
+  
+  csv:to-file alignment-filename alignment-matrix
+  csv:to-file misalignment-filename misalignment-matrix
+end
+
+; ============================================================================
+; AGGREGATE DATA COLLECTION
+; ============================================================================
+
+to-report collect-simulation-data [combo run-id current-tick]
+  ; Count conversions by profile
+  let converted-A count outsiders with [ recruited? and value-profile = "A" ]
+  let converted-B count outsiders with [ recruited? and value-profile = "B" ]
+  let converted-C count outsiders with [ recruited? and value-profile = "C" ]
+  let converted-D count outsiders with [ recruited? and value-profile = "D" ]
+  let converted-E count outsiders with [ recruited? and value-profile = "E" ]
+  
+  ; Count desertions by profile
+  let deserted-A count eas with [ deserted? and value-profile = "A" ]
+  let deserted-B count eas with [ deserted? and value-profile = "B" ]
+  let deserted-C count eas with [ deserted? and value-profile = "C" ]
+  let deserted-D count eas with [ deserted? and value-profile = "D" ]
+  let deserted-E count eas with [ deserted? and value-profile = "E" ]
+  
+  ; Count populations by profile
+  let outsiders-A count outsiders with [ value-profile = "A" ]
+  let outsiders-B count outsiders with [ value-profile = "B" ]
+  let outsiders-C count outsiders with [ value-profile = "C" ]
+  let outsiders-D count outsiders with [ value-profile = "D" ]
+  let outsiders-E count outsiders with [ value-profile = "E" ]
+  
+  let count-eas count eas
+  let count-non-eas count outsiders
+  
+  let ea-A count eas with [ value-profile = "A" ]
+  let ea-B count eas with [ value-profile = "B" ]
+  let ea-C count eas with [ value-profile = "C" ]
+  let ea-D count eas with [ value-profile = "D" ]
+  let ea-E count eas with [ value-profile = "E" ]
+  
+  let total-A count turtles with [ value-profile = "A" ]
+  let total-B count turtles with [ value-profile = "B" ]
+  let total-C count turtles with [ value-profile = "C" ]
+  let total-D count turtles with [ value-profile = "D" ]
+  let total-E count turtles with [ value-profile = "E" ]
+  
+  ; Leader data
+  let leader-value-profile [value-profile] of one-of leaders
+  
+  ; Collect additional data
+  let signal-stats collect-signal-statistics
+  let alignment-data collect-alignment-data
+  let time-stats collect-time-statistics
+  let conversion-rates calculate-conversion-rates converted-A converted-B converted-C converted-D converted-E outsiders-A outsiders-B outsiders-C outsiders-D outsiders-E
+  let desertion-rates calculate-desertion-rates deserted-A deserted-B deserted-C deserted-D deserted-E outsiders-A outsiders-B outsiders-C outsiders-D outsiders-E
+  let grad-counts map [ t -> count-graduating-students t ] (list ( turtle-set eas leaders ) outsiders turtles)
+  
+  ; Compile data row
+  let basic-data (list run-id current-tick)
+  set basic-data sentence basic-data combo  ; Add all combo parameters
+  set basic-data sentence basic-data (list outsiders-A outsiders-B outsiders-C outsiders-D outsiders-E)
+  set basic-data sentence basic-data (list ea-A ea-B ea-C ea-D ea-E)
+  set basic-data sentence basic-data (list count-eas count-non-eas)
+  set basic-data sentence basic-data (list total-A total-B total-C total-D total-E)
+  set basic-data sentence basic-data (list conversion-rate desertion-rate)
+  set basic-data sentence basic-data conversion-rates
+  set basic-data sentence basic-data (list converted-A converted-B converted-C converted-D converted-E)
+  set basic-data sentence basic-data desertion-rates
+  set basic-data sentence basic-data (list deserted-A deserted-B deserted-C deserted-D deserted-E)
+  set basic-data sentence basic-data (list leader-value-profile)
+  set basic-data sentence basic-data (list cumulative-signal-sum-eas cumulative-signal-sum-non-eas cumulative-signal-sum-total)
+  set basic-data sentence basic-data time-stats
+  set basic-data sentence basic-data alignment-data
+  set basic-data sentence basic-data grad-counts
+  set basic-data sentence basic-data signal-stats
+  
+  report basic-data
+end
+
+to-report collect-signal-statistics
+  let mean-signals-eas "NA"
+  let mean-signals-outsiders "NA" 
+  let mean-signals-leader "NA"
+  let sd-signals-eas "NA"
+  let sd-signals-outsiders "NA"
+  
+  ; Collect and potentially rescale signal statistics
+  ifelse signal-representation = "categorical" [
+    ; Use rescaled signals for categorical representation (using existing map-cat-signals function)
+    set mean-signals-eas (ifelse-value (count eas > 0) [mean map-cat-signals reduce sentence ([signals] of eas)] ["NA"])
+    set mean-signals-outsiders (ifelse-value (count outsiders > 0) [mean map-cat-signals reduce sentence ([signals] of outsiders)] ["NA"])
+    set mean-signals-leader (ifelse-value (count leaders > 0) [mean map-cat-signals reduce sentence ([signals] of leaders)] ["NA"])
+    set sd-signals-eas (ifelse-value (count eas > 1) [standard-deviation map-cat-signals reduce sentence ([signals] of eas)] ["NA"])
+    set sd-signals-outsiders (ifelse-value (count outsiders > 1) [standard-deviation map-cat-signals reduce sentence ([signals] of outsiders)] ["NA"])
+  ] [
+    ; Use original signals for binary representation
+    set mean-signals-eas (ifelse-value (count eas > 0) [mean reduce sentence ([signals] of eas)] ["NA"])
+    set mean-signals-outsiders (ifelse-value (count outsiders > 0) [mean reduce sentence ([signals] of outsiders)] ["NA"])
+    set mean-signals-leader (ifelse-value (count leaders > 0) [mean reduce sentence ([signals] of leaders)] ["NA"])
+    set sd-signals-eas (ifelse-value (count eas > 1) [standard-deviation reduce sentence ([signals] of eas)] ["NA"])
+    set sd-signals-outsiders (ifelse-value (count outsiders > 1) [standard-deviation reduce sentence ([signals] of outsiders)] ["NA"])
+  ]
+  
+  let signal-weight-stats collect-signal-weight-statistics
+  
+  report sentence (list mean-signals-eas mean-signals-outsiders mean-signals-leader sd-signals-eas sd-signals-outsiders) signal-weight-stats
+end
+
+to-report collect-signal-weight-statistics
+  ; Collect basic weight statistics (weights 0-1)
+  let ea-weight-0-mean (ifelse-value (count eas > 0) [mean [item 0 signal-weights] of eas] ["NA"])
+  let ea-weight-0-sd (ifelse-value (count eas > 1) [standard-deviation [item 0 signal-weights] of eas] ["NA"])
+  let ea-weight-1-mean (ifelse-value (count eas > 0) [mean [item 1 signal-weights] of eas] ["NA"])
+  let ea-weight-1-sd (ifelse-value (count eas > 1) [standard-deviation [item 1 signal-weights] of eas] ["NA"])
+  
+  let nonea-weight-0-mean (ifelse-value (count outsiders > 0) [mean [item 0 signal-weights] of outsiders] ["NA"])
+  let nonea-weight-0-sd (ifelse-value (count outsiders > 1) [standard-deviation [item 0 signal-weights] of outsiders] ["NA"])
+  let nonea-weight-1-mean (ifelse-value (count outsiders > 0) [mean [item 1 signal-weights] of outsiders] ["NA"])
+  let nonea-weight-1-sd (ifelse-value (count outsiders > 1) [standard-deviation [item 1 signal-weights] of outsiders] ["NA"])
+  
+  let leader-weight-0-mean (ifelse-value (count leaders > 0) [mean [item 0 signal-weights] of leaders] ["NA"])
+  let leader-weight-1-mean (ifelse-value (count leaders > 0) [mean [item 1 signal-weights] of leaders] ["NA"])
+  
+  let basic-weights (list ea-weight-0-mean ea-weight-0-sd ea-weight-1-mean ea-weight-1-sd
+                          nonea-weight-0-mean nonea-weight-0-sd nonea-weight-1-mean nonea-weight-1-sd
+                          leader-weight-0-mean leader-weight-1-mean)
+  
+  ; Add categorical weights if needed
+  let categorical-weights collect-categorical-signal-weights
+  
+  report sentence basic-weights categorical-weights
+end
+
+to-report collect-categorical-signal-weights
+  let categorical-weights []
+  
+  if signal-representation = "categorical" [
+    ; Collect weights 2-5 for each group
+    foreach (range 2 6) [ weight-index ->
+      ; EA weights
+      let ea-mean (ifelse-value (count eas > 0) [mean [item weight-index signal-weights] of eas] ["NA"])
+      let ea-sd (ifelse-value (count eas > 1) [standard-deviation [item weight-index signal-weights] of eas] ["NA"])
+      set categorical-weights sentence categorical-weights (list ea-mean ea-sd)
+    ]
+    
+    foreach (range 2 6) [ weight-index ->
+      ; Non-EA weights
+      let nonea-mean (ifelse-value (count outsiders > 0) [mean [item weight-index signal-weights] of outsiders] ["NA"])
+      let nonea-sd (ifelse-value (count outsiders > 1) [standard-deviation [item weight-index signal-weights] of outsiders] ["NA"])
+      set categorical-weights sentence categorical-weights (list nonea-mean nonea-sd)
+    ]
+    
+    foreach (range 2 6) [ weight-index ->
+      ; Leader weights
+      let leader-mean (ifelse-value (count leaders > 0) [mean [item weight-index signal-weights] of leaders] ["NA"])
+      set categorical-weights sentence categorical-weights (list leader-mean)
+    ]
+  ]
+  
+  report categorical-weights
+end
+
+to-report collect-alignment-data
+  let alignment-bins []
+  
+  ; EA alignment bins (20 bins from 0 to 1)
+  foreach (range 20) [ i ->
+    let lower-bound i * 0.05
+    let upper-bound (i + 1) * 0.05
+    let count-in-bin count eas with [perceived-ea-alignment >= lower-bound and 
+                                    ifelse-value (i = 19) [perceived-ea-alignment <= upper-bound] [perceived-ea-alignment < upper-bound]]
+    set alignment-bins lput count-in-bin alignment-bins
+  ]
+  
+  ; Non-EA alignment bins
+  foreach (range 20) [ i ->
+    let lower-bound i * 0.05
+    let upper-bound (i + 1) * 0.05
+    let count-in-bin count outsiders with [perceived-ea-alignment >= lower-bound and 
+                                          ifelse-value (i = 19) [perceived-ea-alignment <= upper-bound] [perceived-ea-alignment < upper-bound]]
+    set alignment-bins lput count-in-bin alignment-bins
+  ]
+  
+  report alignment-bins
+end
+
+to-report collect-time-statistics
+  let mean-time-eas (ifelse-value (count eas > 0) [mean [time-as-type] of eas] ["NA"])
+  let mean-time-noneas (ifelse-value (count outsiders > 0) [mean [time-as-type] of outsiders] ["NA"])
+  let mean-time (ifelse-value (count turtles > 0) [mean [time-as-type] of turtles] ["NA"])
+  
+  ; Count by year category (1, 2, 3, 4), then by group within each year
+  let count-year1-eas count eas with [year <= 1.5]
+  let count-year1-noneas count outsiders with [year <= 1.5]
+  let count-year1 count turtles with [year <= 1.5]
+  
+  let count-year2-eas count eas with [year > 1.5 and year <= 2.5]
+  let count-year2-noneas count outsiders with [year > 1.5 and year <= 2.5]
+  let count-year2 count turtles with [year > 1.5 and year <= 2.5]
+  
+  let count-year3-eas count eas with [year > 2.5 and year <= 3.5]
+  let count-year3-noneas count outsiders with [year > 2.5 and year <= 3.5]
+  let count-year3 count turtles with [year > 2.5 and year <= 3.5]
+  
+  let count-year4-eas count eas with [year > 3.5]
+  let count-year4-noneas count outsiders with [year > 3.5]
+  let count-year4 count turtles with [year > 3.5]
+  
+  report (list mean-time-eas mean-time-noneas mean-time 
+               count-year1-eas count-year1-noneas count-year1
+               count-year2-eas count-year2-noneas count-year2
+               count-year3-eas count-year3-noneas count-year3
+               count-year4-eas count-year4-noneas count-year4)
+end
