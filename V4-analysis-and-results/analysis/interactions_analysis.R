@@ -1,5 +1,6 @@
 # library(tidyverse)
 # library(RColorBrewer, lib.loc = "/exports/eddie/scratch/s1917169/libs")
+library(patchwork, lib.loc = "/exports/eddie/scratch/s1917169/libs")
 # 
 # main_dir <- "/exports/eddie/scratch/s1917169/ea_sim_pack/analysis"
 # setwd(main_dir)
@@ -296,7 +297,7 @@ ggplot() +
              size = 1.5) +
   facet_grid(leader_election~leader_values)+
   scale_x_continuous(breaks = seq(min(exp_data$tick), max(exp_data$tick), by = 1)) +
-  scale_y_continuous(limits = c(ifelse(min(exp_data$exp_value) > 0, 0, min(exp_data$exp_value)), max(exp_data$exp_value))) +
+  scale_y_continuous(limits = c(min(exp_summary$ribbon_lower), max(exp_data$exp_value))) +
   scale_color_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
   scale_fill_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
   labs(x = "Years", 
@@ -369,6 +370,270 @@ ggplot() +
 ggsave("./figures/Total_leader_influence_x_election_x_values_agg_expected_value.png",
        width = 40, height = 40, dpi = 600, units = "cm")
 
+# Combined plot to reduce width ----
+
+# EAs
+plot_a_ea <- ggplot() +
+  geom_line(data = filter(exp_data, type == "eas" & leader_values == "Value Profile A"), 
+            aes(x = tick, y = exp_value, 
+                color = relative_leader_influence, 
+                group = interaction(combo_id, run_id, relative_leader_influence)), 
+            alpha = 0.2) +
+  geom_ribbon(data = filter(exp_summary, type == "eas"  & leader_values == "Value Profile A"), 
+              aes(x = tick, 
+                  ymin = ribbon_lower, 
+                  ymax = ribbon_upper, 
+                  fill = relative_leader_influence), 
+              alpha = 0.3) +
+  geom_line(data = filter(exp_summary, type == "eas" & leader_values == "Value Profile A"), 
+            aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+            linewidth = 1.2) +
+  geom_point(data = filter(exp_summary, type == "eas" & leader_values == "Value Profile A"), 
+             aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+             size = 1.5) +
+  facet_grid(leader_election~leader_values)+
+  scale_x_continuous(breaks = seq(min(exp_data$tick), max(exp_data$tick), by = 1)) +
+  scale_y_continuous(limits = c(min(exp_summary$ribbon_lower), max(exp_data$exp_value))) +
+  scale_color_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  scale_fill_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  labs(x = "Years", 
+       y = "Expected Signal Value",
+       title = "EAs: Aggregated Expected Signal Value over time by Leader Influence, Election, \nand Values") +
+  theme(panel.background = element_rect(fill = "white", color = "black"),
+        panel.grid.major.y = element_line(color = "grey"),
+        panel.grid.minor.y = element_line(color = "lightgrey"),
+        panel.grid.minor.x = element_line(color = NA),          
+        panel.grid.major.x = element_line(color = NA),
+        strip.background = element_rect(fill = "white", color = "black"),
+        strip.text = element_text(size = 11, face = "bold"),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
+        axis.text = element_text(color = "black", size = 10),
+        axis.title = element_text(face = "bold", size = 11),
+        title = element_text(size = 10),
+        plot.caption = element_text(hjust = 0, size = 9),
+        legend.background = element_rect(fill = "white", color = "black"),
+        legend.position = "none")
+
+plot_b_ea <- ggplot() +
+  geom_line(data = filter(exp_data, type == "eas" & leader_values == "Value Profile B"), 
+            aes(x = tick, y = exp_value, 
+                color = relative_leader_influence, 
+                group = interaction(combo_id, run_id, relative_leader_influence)), 
+            alpha = 0.2) +
+  geom_ribbon(data = filter(exp_summary, type == "eas"  & leader_values == "Value Profile B"), 
+              aes(x = tick, 
+                  ymin = ribbon_lower, 
+                  ymax = ribbon_upper, 
+                  fill = relative_leader_influence), 
+              alpha = 0.3) +
+  geom_line(data = filter(exp_summary, type == "eas" & leader_values == "Value Profile B"), 
+            aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+            linewidth = 1.2) +
+  geom_point(data = filter(exp_summary, type == "eas" & leader_values == "Value Profile B"), 
+             aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+             size = 1.5) +
+  facet_grid(leader_election~leader_values)+
+  scale_x_continuous(breaks = seq(min(exp_data$tick), max(exp_data$tick), by = 1)) +
+  scale_y_continuous(limits = c(min(exp_summary$ribbon_lower), max(exp_data$exp_value))) +
+  scale_color_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  scale_fill_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  labs(x = "Years", 
+       y = "Expected Signal Value")+
+  theme(panel.background = element_rect(fill = "white", color = "black"),
+        panel.grid.major.y = element_line(color = "grey"),
+        panel.grid.minor.y = element_line(color = "lightgrey"),
+        panel.grid.minor.x = element_line(color = NA),          
+        panel.grid.major.x = element_line(color = NA),
+        strip.background = element_rect(fill = "white", color = "black"),
+        strip.text = element_text(size = 11, face = "bold"),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
+        axis.text = element_text(color = "black", size = 10),
+        axis.title = element_text(face = "bold", size = 11),
+        title = element_text(size = 10),
+        plot.caption = element_text(hjust = 0, size = 9),
+        legend.background = element_rect(fill = "white", color = "black"),
+        legend.position = "none")
+
+plot_c_ea <- ggplot() +
+  geom_line(data = filter(exp_data, type == "eas" & leader_values == "Value Profile C"), 
+            aes(x = tick, y = exp_value, 
+                color = relative_leader_influence, 
+                group = interaction(combo_id, run_id, relative_leader_influence)), 
+            alpha = 0.2) +
+  geom_ribbon(data = filter(exp_summary, type == "eas"  & leader_values == "Value Profile C"), 
+              aes(x = tick, 
+                  ymin = ribbon_lower, 
+                  ymax = ribbon_upper, 
+                  fill = relative_leader_influence), 
+              alpha = 0.3) +
+  geom_line(data = filter(exp_summary, type == "eas" & leader_values == "Value Profile C"), 
+            aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+            linewidth = 1.2) +
+  geom_point(data = filter(exp_summary, type == "eas" & leader_values == "Value Profile C"), 
+             aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+             size = 1.5) +
+  facet_grid(leader_election~leader_values)+
+  scale_x_continuous(breaks = seq(min(exp_data$tick), max(exp_data$tick), by = 1)) +
+  scale_y_continuous(limits = c(min(exp_summary$ribbon_lower), max(exp_data$exp_value))) +
+  scale_color_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  scale_fill_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  labs(x = "Years", 
+       y = "Expected Signal Value",
+       caption = cap_text)+
+  theme(panel.background = element_rect(fill = "white", color = "black"),
+        panel.grid.major.y = element_line(color = "grey"),
+        panel.grid.minor.y = element_line(color = "lightgrey"),
+        panel.grid.minor.x = element_line(color = NA),          
+        panel.grid.major.x = element_line(color = NA),
+        strip.background = element_rect(fill = "white", color = "black"),
+        strip.text = element_text(size = 11, face = "bold"),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
+        axis.text = element_text(color = "black", size = 10),
+        axis.title = element_text(face = "bold", size = 11),
+        title = element_text(size = 10),
+        plot.caption = element_text(hjust = 0, size = 9),
+        legend.background = element_rect(fill = "white", color = "black"),
+        legend.position = "bottom")
+
+plot_a_ea /plot_b_ea/plot_c_ea
+
+ggsave("./figures/EA_leader_influence_x_election_x_values_agg_expected_value_long.png",
+       width = 20, height = 60, dpi = 600, units = "cm")
+
+
+# All agents
+plot_a_all <- ggplot() +
+  geom_line(data = filter(exp_data, type == "total" & leader_values == "Value Profile A"), 
+            aes(x = tick, y = exp_value, 
+                color = relative_leader_influence, 
+                group = interaction(combo_id, run_id, relative_leader_influence)), 
+            alpha = 0.2) +
+  geom_ribbon(data = filter(exp_summary, type == "total"  & leader_values == "Value Profile A"), 
+              aes(x = tick, 
+                  ymin = ribbon_lower, 
+                  ymax = ribbon_upper, 
+                  fill = relative_leader_influence), 
+              alpha = 0.3) +
+  geom_line(data = filter(exp_summary, type == "total" & leader_values == "Value Profile A"), 
+            aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+            linewidth = 1.2) +
+  geom_point(data = filter(exp_summary, type == "total" & leader_values == "Value Profile A"), 
+             aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+             size = 1.5) +
+  facet_grid(leader_election~leader_values)+
+  scale_x_continuous(breaks = seq(min(exp_data$tick), max(exp_data$tick), by = 1)) +
+  scale_y_continuous(limits = c(min(exp_summary$ribbon_lower), max(exp_data$exp_value))) +
+  scale_color_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  scale_fill_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  labs(x = "Years", 
+       y = "Expected Signal Value",
+       title = "EAs: Aggregated Expected Signal Value over time by Leader Influence, Election, \nand Values") +
+  theme(panel.background = element_rect(fill = "white", color = "black"),
+        panel.grid.major.y = element_line(color = "grey"),
+        panel.grid.minor.y = element_line(color = "lightgrey"),
+        panel.grid.minor.x = element_line(color = NA),          
+        panel.grid.major.x = element_line(color = NA),
+        strip.background = element_rect(fill = "white", color = "black"),
+        strip.text = element_text(size = 11, face = "bold"),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
+        axis.text = element_text(color = "black", size = 10),
+        axis.title = element_text(face = "bold", size = 11),
+        title = element_text(size = 10),
+        plot.caption = element_text(hjust = 0, size = 9),
+        legend.background = element_rect(fill = "white", color = "black"),
+        legend.position = "none")
+
+plot_b_all <- ggplot() +
+  geom_line(data = filter(exp_data, type == "total" & leader_values == "Value Profile B"), 
+            aes(x = tick, y = exp_value, 
+                color = relative_leader_influence, 
+                group = interaction(combo_id, run_id, relative_leader_influence)), 
+            alpha = 0.2) +
+  geom_ribbon(data = filter(exp_summary, type == "total"  & leader_values == "Value Profile B"), 
+              aes(x = tick, 
+                  ymin = ribbon_lower, 
+                  ymax = ribbon_upper, 
+                  fill = relative_leader_influence), 
+              alpha = 0.3) +
+  geom_line(data = filter(exp_summary, type == "total" & leader_values == "Value Profile B"), 
+            aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+            linewidth = 1.2) +
+  geom_point(data = filter(exp_summary, type == "total" & leader_values == "Value Profile B"), 
+             aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+             size = 1.5) +
+  facet_grid(leader_election~leader_values)+
+  scale_x_continuous(breaks = seq(min(exp_data$tick), max(exp_data$tick), by = 1)) +
+  scale_y_continuous(limits = c(min(exp_summary$ribbon_lower), max(exp_data$exp_value))) +
+  scale_color_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  scale_fill_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  labs(x = "Years", 
+       y = "Expected Signal Value")+
+  theme(panel.background = element_rect(fill = "white", color = "black"),
+        panel.grid.major.y = element_line(color = "grey"),
+        panel.grid.minor.y = element_line(color = "lightgrey"),
+        panel.grid.minor.x = element_line(color = NA),          
+        panel.grid.major.x = element_line(color = NA),
+        strip.background = element_rect(fill = "white", color = "black"),
+        strip.text = element_text(size = 11, face = "bold"),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
+        axis.text = element_text(color = "black", size = 10),
+        axis.title = element_text(face = "bold", size = 11),
+        title = element_text(size = 10),
+        plot.caption = element_text(hjust = 0, size = 9),
+        legend.background = element_rect(fill = "white", color = "black"),
+        legend.position = "none")
+
+plot_c_all <- ggplot() +
+  geom_line(data = filter(exp_data, type == "total" & leader_values == "Value Profile C"), 
+            aes(x = tick, y = exp_value, 
+                color = relative_leader_influence, 
+                group = interaction(combo_id, run_id, relative_leader_influence)), 
+            alpha = 0.2) +
+  geom_ribbon(data = filter(exp_summary, type == "total"  & leader_values == "Value Profile C"), 
+              aes(x = tick, 
+                  ymin = ribbon_lower, 
+                  ymax = ribbon_upper, 
+                  fill = relative_leader_influence), 
+              alpha = 0.3) +
+  geom_line(data = filter(exp_summary, type == "total" & leader_values == "Value Profile C"), 
+            aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+            linewidth = 1.2) +
+  geom_point(data = filter(exp_summary, type == "total" & leader_values == "Value Profile C"), 
+             aes(x = tick, y = mean_exp_value, color = relative_leader_influence), 
+             size = 1.5) +
+  facet_grid(leader_election~leader_values)+
+  scale_x_continuous(breaks = seq(min(exp_data$tick), max(exp_data$tick), by = 1)) +
+  scale_y_continuous(limits = c(min(exp_summary$ribbon_lower), max(exp_data$exp_value))) +
+  scale_color_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  scale_fill_brewer(type = "qual", palette = "Spectral", name = "Relative \nLeader \nInfluence") +
+  labs(x = "Years", 
+       y = "Expected Signal Value",
+       caption = cap_text)+
+  theme(panel.background = element_rect(fill = "white", color = "black"),
+        panel.grid.major.y = element_line(color = "grey"),
+        panel.grid.minor.y = element_line(color = "lightgrey"),
+        panel.grid.minor.x = element_line(color = NA),          
+        panel.grid.major.x = element_line(color = NA),
+        strip.background = element_rect(fill = "white", color = "black"),
+        strip.text = element_text(size = 11, face = "bold"),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
+        axis.text = element_text(color = "black", size = 10),
+        axis.title = element_text(face = "bold", size = 11),
+        title = element_text(size = 10),
+        plot.caption = element_text(hjust = 0, size = 9),
+        legend.background = element_rect(fill = "white", color = "black"),
+        legend.position = "bottom")
+
+plot_a_all /plot_b_all/plot_c_all
+
+ggsave("./figures/Total_leader_influence_x_election_x_values_agg_expected_value_long.png",
+       width = 20, height = 60, dpi = 600, units = "cm")
 
 # ------------------------------------------------------------------------------
 # Interaction: recruitment strictness x desertion strictness x relative leader influence 

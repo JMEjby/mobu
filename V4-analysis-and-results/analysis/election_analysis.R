@@ -1,13 +1,13 @@
-# library(tidyverse)
-# library(RColorBrewer, lib.loc = "/exports/eddie/scratch/s1917169/libs")
-# 
-# main_dir <- "/exports/eddie/scratch/s1917169/ea_sim_pack/analysis"
-# setwd(main_dir)
+library(tidyverse)
+library(RColorBrewer, lib.loc = "/exports/eddie/scratch/s1917169/libs")
 
-#data <- read_csv("/exports/eddie/scratch/s1917169/ea_sim_pack/results/combined_aggregated_data_20250813_191224.csv")
+main_dir <- "/exports/eddie/scratch/s1917169/ea_sim_pack/analysis"
+setwd(main_dir)
+
+data <- read_csv("/exports/eddie/scratch/s1917169/ea_sim_pack/results/combined_aggregated_data_20250813_191224.csv")
 #params <- read_csv("/exports/eddie/scratch/s1917169/ea_sim_pack/parameter_combinations.csv")
 
-#data <- data |> rename(combo_id = "combo-id")
+data <- data |> rename(combo_id = "combo-id")
 
 # ------------------------------------------------------------------------------
 # Leader Election
@@ -195,8 +195,8 @@ cap_text <- paste("Simulations per combination:", max(exp_data$run_id),
                   "|\nSignal representation:", str_to_title(exp_data$signal_representation[1]),
                   "| Relative leader influence level:", exp_data$relative_leader_influence[1], " %",
                   "| Recruitment strictness level:", exp_data$log_recruitment_strictness[1],                  
-                  "| Desertion strictness level:", exp_data$log_desertion_strictness[1],
-                  "|\nSocial influence Level:", exp_data$social_influence[1],
+                  "|\nDesertion strictness level:", exp_data$log_desertion_strictness[1],
+                  "| Social influence Level:", exp_data$social_influence[1],
                   "| Leader values:", str_to_title(gsub(pattern = "-",  " ", exp_data$leader_values[1])),
                   "| EA value bias:", exp_data$ea_bias[1],
                   "|\nPopulation Composition:", str_to_title(gsub(pattern = "-",  " ", exp_data$population_composition[1])))
@@ -296,7 +296,7 @@ ggplot() +
              size = 1.5) +
   facet_wrap(~type, ncol = 1, labeller = labeller(type = labs))+
   scale_x_continuous(breaks = seq(min(exp_data$tick), max(exp_data$tick), by = 1)) +
-  scale_y_continuous(limits = c(ifelse(min(exp_data$exp_value) > 0, 0, min(exp_data$exp_value)), max(exp_data$exp_value))) +
+  scale_y_continuous(limits = c(min(exp_summary$ribbon_lower), max(exp_data$exp_value))) +
   scale_color_brewer(type = "qual", palette = "Set1", name = "Leader \nElection \nMethod") +
   scale_fill_brewer(type = "qual", palette = "Set1", name = "Leader \nElection \nMethod") +
   labs(x = "Years", 
